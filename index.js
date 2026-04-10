@@ -190,6 +190,9 @@ function processBotCommand(username, message) {
       }
       break
     }
+    case message === 'Bot.goto.nearest':
+      handleGotoNearest()
+      break
     case message.startsWith('Bot.follow '): {
       const targetUsernameFollow = message.slice(11).trim()
       handleFollow(targetUsernameFollow)
@@ -442,6 +445,27 @@ function handleGoto(targetUsername) {
   setTrackedGoal(new GoalFollow(target, RANGE_GOAL))
   bot.chat(`Going to ${targetUsername}`)
 }
+
+//Go to the nearest player
+function handleGotoNearest() {
+  const nearestPlayer = bot.nearestEntity((entity) => {
+    if (!entity) return false
+    if (entity.type !== 'player') return false
+    if (entity.username === bot.username) return false
+    if (entity.isValid === false) return false
+    return true
+  })
+
+  if (!nearestPlayer) {
+    bot.chat('ERROR: No players found')
+    return
+  }
+
+  bot.pathfinder.setMovements(defaultMove)
+  setTrackedGoal(new GoalFollow(nearestPlayer, RANGE_GOAL))
+  bot.chat(`Going to nearest player: ${nearestPlayer.username}`)
+}
+
 //Follow a specified player, updating the goal as they move
 function handleFollow(targetUsername) {
   const target = bot.players[targetUsername]?.entity
