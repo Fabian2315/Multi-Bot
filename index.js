@@ -59,6 +59,7 @@ function createAndSetupBot() {
   bot.loadPlugin(collectBlock)
   bot.loadPlugin(autoEat)
   bot.loadPlugin(armorManager)
+  installChatProxy(bot)
   
   return bot
 }
@@ -118,6 +119,7 @@ let trackedGoalState = {
 
 let autoEatEnabled = false
 let viewerEnabled = true
+let silentModeEnabled = false
 let io = null
 const webLogs = []
 let lastStateSignature = ''
@@ -137,6 +139,57 @@ function pushWebLog(type, message) {
   if (io) {
     io.emit('log', entry)
   }
+}
+
+function installChatProxy(targetBot) {
+  if (!targetBot || targetBot.__chatProxyInstalled) return
+
+  const tryInstallProxy = () => {
+    if (targetBot.__chatProxyInstalled) return true
+    if (typeof targetBot.chat !== 'function') return false
+
+    const originalChat = targetBot.chat.bind(targetBot)
+    targetBot.chat = (message, ...args) => {
+      const text = String(message)
+      console.log(`[bot-chat] ${text}`)
+      pushWebLog('bot', text)
+
+      if (silentModeEnabled) {
+        return
+      }
+
+      return originalChat(message, ...args)
+    }
+
+    targetBot.__chatProxyInstalled = true
+    targetBot.removeListener('login', tryInstallProxy)
+    targetBot.removeListener('spawn', tryInstallProxy)
+    return true
+  }
+
+  if (tryInstallProxy()) return
+
+  // Some Mineflayer versions attach chat helpers after connection events.
+  targetBot.once('login', tryInstallProxy)
+  targetBot.once('spawn', tryInstallProxy)
+}
+
+function setSilentMode(enabled) {
+  silentModeEnabled = Boolean(enabled)
+  const statusText = `Silent mode ${silentModeEnabled ? 'enabled' : 'disabled'}`
+  console.log(statusText)
+  pushWebLog('system', statusText)
+  broadcastState(true)
+}
+
+function handleToggleSilentMode() {
+  setSilentMode(!silentModeEnabled)
+}
+
+function handleSilentModeStatus() {
+  const statusText = `Silent mode is currently ${silentModeEnabled ? 'enabled' : 'disabled'}`
+  console.log(statusText)
+  pushWebLog('system', statusText)
 }
 
 function getRuntimeState() {
@@ -164,6 +217,7 @@ function getRuntimeState() {
     miningEnabled,
     guardEnabled: Boolean(guardPos),
     viewerEnabled,
+    silentModeEnabled,
     viewerUrl: `http://localhost:${botSettings.viewerPort}`,
     health: connected && typeof bot.health === 'number' ? bot.health : null,
     hunger: connected && typeof bot.food === 'number' ? bot.food : null,
@@ -189,6 +243,7 @@ function getStateSignature(state) {
     miningEnabled: state.miningEnabled,
     guardEnabled: state.guardEnabled,
     viewerEnabled: state.viewerEnabled,
+    silentModeEnabled: state.silentModeEnabled,
     health: state.health,
     hunger: state.hunger,
     inventory: state.inventory,
@@ -336,6 +391,18 @@ function processBotCommand(username, message) {
       break
     case message === 'Bot.selfdefense.status':
       handleSelfDefenseStatus()
+      break
+    case message === 'Bot.silent':
+      handleToggleSilentMode()
+      break
+    case message === 'Bot.silent.on':
+      setSilentMode(true)
+      break
+    case message === 'Bot.silent.off':
+      setSilentMode(false)
+      break
+    case message === 'Bot.silent.status':
+      handleSilentModeStatus()
       break
     case message.startsWith('Bot.collect '): {
       const collectArgs = message.slice(12).trim().split(' ')
@@ -1264,6 +1331,11 @@ function startWebServer() {
     if (toggleName === 'viewer') {
       setViewerEnabled(!viewerEnabled)
       return res.json({ ok: true, viewerEnabled })
+    }
+
+    if (toggleName === 'silent') {
+      setSilentMode(!silentModeEnabled)
+      return res.json({ ok: true, silentModeEnabled })
     }
 
     return res.status(404).json({ ok: false, error: `Unknown toggle ${toggleName}` })

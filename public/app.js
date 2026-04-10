@@ -3,6 +3,7 @@ const socket = io()
 const statusPill = document.getElementById('statusPill')
 const toggleSelfDefense = document.getElementById('toggleSelfDefense')
 const toggleAutoEat = document.getElementById('toggleAutoEat')
+const toggleSilentMode = document.getElementById('toggleSilentMode')
 const commandForm = document.getElementById('commandForm')
 const commandInput = document.getElementById('commandInput')
 const settingsForm = document.getElementById('settingsForm')
@@ -76,6 +77,9 @@ function setStatus(state) {
 
   toggleAutoEat.textContent = `Auto Eat: ${state.autoEatEnabled ? 'ON' : 'OFF'}`
   toggleAutoEat.style.background = state.autoEatEnabled ? '#1c7c54' : '#a63a50'
+
+  toggleSilentMode.textContent = `Silent Mode: ${state.silentModeEnabled ? 'ON' : 'OFF'}`
+  toggleSilentMode.style.background = state.silentModeEnabled ? '#1c7c54' : '#a63a50'
 
   toggleViewer.textContent = `Viewer: ${state.viewerEnabled ? 'ON' : 'OFF'}`
   toggleViewer.style.background = state.viewerEnabled ? '#1c7c54' : '#a63a50'
@@ -167,6 +171,14 @@ toggleSelfDefense.addEventListener('click', async () => {
 toggleAutoEat.addEventListener('click', async () => {
   try {
     await postJson('/api/toggle/autoEat')
+  } catch (error) {
+    appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+  }
+})
+
+toggleSilentMode.addEventListener('click', async () => {
+  try {
+    await postJson('/api/toggle/silent')
   } catch (error) {
     appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
   }

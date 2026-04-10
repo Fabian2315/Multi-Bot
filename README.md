@@ -106,6 +106,22 @@ Use these commands in Minecraft chat:
   - What it does: Shows whether self-defense is enabled.
   - Syntax: `Bot.selfdefense.status`
 
+- `Bot.silent`
+  - What it does: Toggles global silent mode for outgoing in-game bot chat messages.
+  - Syntax: `Bot.silent`
+
+- `Bot.silent.on`
+  - What it does: Enables global silent mode (outgoing bot chat is blocked in Minecraft chat, still logged to console).
+  - Syntax: `Bot.silent.on`
+
+- `Bot.silent.off`
+  - What it does: Disables global silent mode.
+  - Syntax: `Bot.silent.off`
+
+- `Bot.silent.status`
+  - What it does: Prints current silent mode status to the console and web logs.
+  - Syntax: `Bot.silent.status`
+
 - `Bot.guard.here`
   - What it does: Guards the current position of the command sender.
   - Syntax: `Bot.guard.here`
