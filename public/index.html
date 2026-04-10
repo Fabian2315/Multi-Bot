@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mineflayer Control Deck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <main class="layout">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Mineflayer Dashboard</p>
+        <h1>Control Deck</h1>
+      </div>
+      <div class="status-pill" id="statusPill">Connecting...</div>
+    </header>
+
+    <nav class="tab-bar">
+      <button class="tab active" data-tab="controls">Controls</button>
+      <button class="tab" data-tab="viewer">Prismarine Viewer</button>
+      <button class="tab" data-tab="settings">Settings</button>
+      <button class="tab" data-tab="logs">Logs</button>
+    </nav>
+
+    <section class="tab-panel active" id="controls">
+      <div class="panel-grid">
+        <article class="card">
+          <h2>Toggle Settings</h2>
+          <p class="muted">One-click toggles for all runtime bot settings.</p>
+          <div class="toggle-group">
+            <button id="toggleSelfDefense" class="action-btn">Self Defense: ...</button>
+            <button id="toggleAutoEat" class="action-btn">Auto Eat: ...</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>Quick Actions</h2>
+          <div class="quick-actions">
+            <button data-command="Bot.come">Come</button>
+            <button data-command="Bot.follow.stop">Stop Follow</button>
+            <button data-command="Bot.pvp.stop">Stop PvP</button>
+            <button data-command="Bot.guard.stop">Stop Guard</button>
+            <button data-command="Bot.miner.stop">Stop Miner</button>
+            <button data-command="Bot.empty">Empty Inventory</button>
+          </div>
+        </article>
+      </div>
+
+      <article class="card command-card">
+        <h2>Command Line</h2>
+        <p class="muted">Send any bot instruction. Prefix with Bot. or just type the command body.</p>
+        <form id="commandForm" class="command-form">
+          <input id="commandInput" type="text" placeholder="Examples: goto Steve | Bot.guard.here | mine coal_ore" autocomplete="off">
+          <button type="submit">Send</button>
+        </form>
+      </article>
+    </section>
+
+    <section class="tab-panel" id="viewer">
+      <article class="card viewer-card">
+        <div class="viewer-head">
+          <h2>Integrated Prismarine Viewer</h2>
+          <a id="viewerLink" href="http://localhost:3008" target="_blank" rel="noreferrer">Open in new tab</a>
+        </div>
+        <iframe id="viewerFrame" title="Prismarine Viewer" src="http://localhost:3008"></iframe>
+      </article>
+    </section>
+
+    <section class="tab-panel" id="settings">
+      <article class="card settings-card">
+        <h2>Bot Connection Settings</h2>
+        <p class="muted">Changes are saved to disk and used on next process start.</p>
+        <form id="settingsForm" class="settings-form">
+          <label>Server Host<input name="host" required></label>
+          <label>Server Port<input name="port" type="number" required></label>
+          <label>Bot Username<input name="username" required></label>
+          <label>Minecraft Version<input name="version" required></label>
+          <label>Viewer Port<input name="viewerPort" type="number" required></label>
+          <label>Web Port<input name="webPort" type="number" required></label>
+          <button type="submit">Save Settings</button>
+        </form>
+        <p id="settingsNotice" class="notice"></p>
+      </article>
+    </section>
+
+    <section class="tab-panel" id="logs">
+      <article class="card logs-card">
+        <h2>Live Event Stream</h2>
+        <pre id="logsView"></pre>
+      </article>
+    </section>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

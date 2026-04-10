@@ -1,0 +1,246 @@
+:root {
+  --bg-1: #0a1c1f;
+  --bg-2: #112d33;
+  --panel: #f6f3ea;
+  --panel-2: #ffffff;
+  --ink: #14130f;
+  --accent: #e7512f;
+  --accent-2: #f0a202;
+  --ok: #1c7c54;
+  --warn: #a63a50;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: "Space Grotesk", sans-serif;
+  background: radial-gradient(circle at 15% 10%, #214a4f 0, transparent 34%), radial-gradient(circle at 80% 80%, #1f4441 0, transparent 32%), linear-gradient(120deg, var(--bg-1), var(--bg-2));
+}
+
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.layout {
+  position: relative;
+  z-index: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.2rem;
+  animation: rise 450ms ease;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  color: #f9f4e8;
+}
+
+.eyebrow {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 0;
+  opacity: 0.8;
+  font-size: 0.8rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3.4vw, 2.8rem);
+}
+
+.status-pill {
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(6px);
+  font-size: 0.9rem;
+}
+
+.tab-bar {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tab {
+  border: 0;
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.95rem;
+  font-weight: 700;
+  background: #f8db91;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tab-panel {
+  display: none;
+  margin-top: 1rem;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  background: var(--panel);
+  border: 2px solid #1f2a2d;
+  border-radius: 1rem;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+  padding: 1rem;
+}
+
+.card h2 {
+  margin-top: 0;
+}
+
+.muted {
+  margin-top: -0.2rem;
+  color: #635f54;
+}
+
+.action-btn,
+.quick-actions button,
+.command-form button,
+.settings-form button {
+  border: 0;
+  border-radius: 0.6rem;
+  background: #1f2a2d;
+  color: #fff;
+  padding: 0.58rem 0.85rem;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.toggle-group {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.6rem;
+}
+
+.command-card {
+  margin-top: 1rem;
+}
+
+.command-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.6rem;
+}
+
+.command-form input,
+.settings-form input {
+  width: 100%;
+  border: 2px solid #283336;
+  border-radius: 0.6rem;
+  padding: 0.58rem 0.7rem;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.viewer-card {
+  min-height: 72vh;
+}
+
+.viewer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+#viewerFrame {
+  width: 100%;
+  min-height: 64vh;
+  border: 2px solid #203138;
+  border-radius: 0.8rem;
+  background: #fff;
+}
+
+.settings-form {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.settings-form label {
+  font-size: 0.88rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.settings-form button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.notice {
+  margin-top: 0.8rem;
+  min-height: 1.3rem;
+  color: var(--warn);
+}
+
+.logs-card pre {
+  background: #111;
+  color: #9ef6c0;
+  border-radius: 0.6rem;
+  padding: 0.8rem;
+  min-height: 55vh;
+  max-height: 60vh;
+  overflow-y: auto;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.86rem;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 700px) {
+  .command-form {
+    grid-template-columns: 1fr;
+  }
+
+  .viewer-card {
+    min-height: 60vh;
+  }
+
+  #viewerFrame {
+    min-height: 52vh;
+  }
+}

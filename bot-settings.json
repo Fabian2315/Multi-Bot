@@ -1,0 +1,8 @@
+{
+  "host": "localhost",
+  "port": 25565,
+  "username": "Bot",
+  "version": "1.21.11",
+  "viewerPort": 3008,
+  "webPort": 3000
+}

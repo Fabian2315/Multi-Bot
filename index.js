@@ -1,3 +1,8 @@
+const fs = require('fs')
+const path = require('path')
+const http = require('http')
+const express = require('express')
+const { Server } = require('socket.io')
 const mineflayer = require('mineflayer')
 const mineflayerViewer = require('prismarine-viewer').mineflayer
 const { pathfinder, Movements, goals: { GoalNear, GoalFollow, GoalBlock }} = require('mineflayer-pathfinder')
@@ -7,12 +12,43 @@ const autoEat = require('mineflayer-auto-eat').loader
 const armorManager = require('mineflayer-armor-manager')
 const nbt = require('prismarine-nbt')
 
-
-const bot = mineflayer.createBot({
+const SETTINGS_FILE = path.join(__dirname, 'bot-settings.json')
+const DEFAULT_BOT_SETTINGS = {
   host: 'localhost',
   port: 25565,
   username: 'Bot',
-  version: '1.21.11'
+  version: '1.21.11',
+  viewerPort: 3008,
+  webPort: 3000
+}
+
+function loadBotSettings() {
+  try {
+    const raw = fs.readFileSync(SETTINGS_FILE, 'utf8')
+    const parsed = JSON.parse(raw)
+    return {
+      ...DEFAULT_BOT_SETTINGS,
+      ...parsed,
+      port: Number(parsed.port) || DEFAULT_BOT_SETTINGS.port,
+      viewerPort: Number(parsed.viewerPort) || DEFAULT_BOT_SETTINGS.viewerPort,
+      webPort: Number(parsed.webPort) || DEFAULT_BOT_SETTINGS.webPort
+    }
+  } catch {
+    return { ...DEFAULT_BOT_SETTINGS }
+  }
+}
+
+function saveBotSettings(settings) {
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2) + '\n', 'utf8')
+}
+
+const botSettings = loadBotSettings()
+
+const bot = mineflayer.createBot({
+  host: botSettings.host,
+  port: botSettings.port,
+  username: botSettings.username,
+  version: botSettings.version
 })
 
 bot.loadPlugin(pathfinder)
@@ -72,19 +108,57 @@ let trackedGoalState = {
   meta: null
 }
 
+let autoEatEnabled = false
+let io = null
+const webLogs = []
+
+function pushWebLog(type, message) {
+  const entry = {
+    ts: new Date().toISOString(),
+    type,
+    message
+  }
+
+  webLogs.push(entry)
+  if (webLogs.length > 200) {
+    webLogs.shift()
+  }
+
+  if (io) {
+    io.emit('log', entry)
+  }
+}
+
+function getRuntimeState() {
+  return {
+    username: bot.username,
+    host: botSettings.host,
+    port: botSettings.port,
+    connected: Boolean(bot.player),
+    selfDefenseEnabled,
+    autoEatEnabled,
+    miningEnabled,
+    guardEnabled: Boolean(guardPos),
+    viewerUrl: `http://localhost:${botSettings.viewerPort}`
+  }
+}
+
+function broadcastState() {
+  if (!io) return
+  io.emit('state', getRuntimeState())
+}
+
 bot.once('spawn', () => {
-  mineflayerViewer(bot, { port: 3008, firstPerson: true })
+  mineflayerViewer(bot, { port: botSettings.viewerPort, firstPerson: true })
   mcData = require('minecraft-data')(bot.version)
   defaultMove = new Movements(bot)
   handleAutoEat(true)
   handleSelfDefenseStatus()
+  pushWebLog('system', `Spawned as ${bot.username} on ${botSettings.host}:${botSettings.port}`)
+  broadcastState()
 })
 
-// Listen for chat messages and handle commands. syntax: Bot.<command> [args]
-bot.on('chat', (username, message) => {
-  console.log(`chat event: ${username}: ${message}`)
-  if (username === bot.username) return
-
+function processBotCommand(username, message) {
   switch (true) {
     case message === 'Bot.test':
       handleTest()
@@ -92,7 +166,7 @@ bot.on('chat', (username, message) => {
     case message === 'Bot.come':
       handleCome(username)
       break
-    case message.startsWith('Bot.goto '):
+    case message.startsWith('Bot.goto '): {
       const gotoArgs = message.slice(9).trim().split(' ')
       if (gotoArgs.length === 1) {
         handleGoto(gotoArgs[0])
@@ -107,18 +181,21 @@ bot.on('chat', (username, message) => {
         bot.chat('ERROR: usage Bot.goto <player> or Bot.goto <x> <y> <z>')
       }
       break
-    case message.startsWith('Bot.follow '):
+    }
+    case message.startsWith('Bot.follow '): {
       const targetUsernameFollow = message.slice(11).trim()
       handleFollow(targetUsernameFollow)
       break
-    case message.startsWith('Bot.attack '):
+    }
+    case message.startsWith('Bot.attack '): {
       const targetUsernameAttack = message.slice(11).trim()
       handleAttack(targetUsernameAttack)
       break
+    }
     case message === 'Bot.guard.here':
       handleGuardHere(username)
       break
-    case message.startsWith('Bot.guard '):
+    case message.startsWith('Bot.guard '): {
       const guardArgs = message.slice(10).trim().split(' ')
       if (guardArgs.length !== 3) {
         bot.chat('ERROR: usage Bot.guard <x> <y> <z>')
@@ -131,6 +208,7 @@ bot.on('chat', (username, message) => {
         }
       }
       break
+    }
     case message === 'Bot.guard':
       bot.chat('ERROR: usage Bot.guard <x> <y> <z> or Bot.guard.here')
       break
@@ -158,7 +236,7 @@ bot.on('chat', (username, message) => {
     case message === 'Bot.selfdefense.status':
       handleSelfDefenseStatus()
       break
-    case message.startsWith('Bot.collect '):
+    case message.startsWith('Bot.collect '): {
       const collectArgs = message.slice(12).trim().split(' ')
       if (collectArgs.length !== 2) {
         bot.chat('ERROR: usage Bot.collect <blockType> <number>')
@@ -172,6 +250,7 @@ bot.on('chat', (username, message) => {
         }
       }
       break
+    }
     case message === 'Bot.autoEat':
       handleAutoEat(true)
       break
@@ -184,11 +263,25 @@ bot.on('chat', (username, message) => {
     case message === 'Bot.empty':
       handleEmptyInventory()
       break
-    case message.startsWith('Bot.mine '):
+    case message.startsWith('Bot.mine '): {
       const blockTypeMine = message.slice(9).trim()
       handleMiner(blockTypeMine)
       break
+    }
+    default:
+      bot.chat('ERROR: unknown command')
+      break
   }
+
+  broadcastState()
+}
+
+// Listen for chat messages and handle commands. syntax: Bot.<command> [args]
+bot.on('chat', (username, message) => {
+  console.log(`chat event: ${username}: ${message}`)
+  pushWebLog('chat', `${username}: ${message}`)
+  if (username === bot.username) return
+  processBotCommand(username, message)
 })
 
 function setTrackedGoal(goal, dynamic = false, meta = null) {
@@ -284,6 +377,7 @@ function stopGuarding() {
   guardPos = null
   bot.pvp.stop()
   setTrackedGoal(null)
+  broadcastState()
 }
 
 function handleGuardAtCoordinates(x, y, z) {
@@ -383,6 +477,7 @@ async function handleBlockCollection(blockType, repeats) {
 }
 async function handleMiner(blockType) {
   miningEnabled = true
+  broadcastState()
   const originalPos = bot.entity.position.clone()
   bot.chat('Starting miner, searching for ' + blockType)
   while (miningEnabled) {
@@ -522,6 +617,7 @@ function handleStopMiner() {
   miningEnabled = false
   setTrackedGoal(null)
   bot.chat('Stopped miner')
+  broadcastState()
 }
 function handleAutoEat(enable) {
   if (!bot.autoEat) {
@@ -529,6 +625,7 @@ function handleAutoEat(enable) {
     return
   }
 
+  autoEatEnabled = Boolean(enable)
   if (enable) {
     bot.autoEat.enableAuto()
     bot.chat('Auto eat enabled')
@@ -536,6 +633,8 @@ function handleAutoEat(enable) {
     bot.autoEat.disableAuto()
     bot.chat('Auto eat disabled')
   }
+
+  broadcastState()
 }
 async function handleEat() {
   if (!bot.autoEat) {
@@ -629,11 +728,13 @@ function handleGoToPosition(x, y, z) {
 function handleToggleSelfDefense() {
   selfDefenseEnabled = !selfDefenseEnabled
   bot.chat(`Self defense ${selfDefenseEnabled ? 'enabled' : 'disabled'}`)
+  broadcastState()
 }
 
 function handleSetSelfDefense(enabled) {
   selfDefenseEnabled = enabled
   bot.chat(`Self defense ${selfDefenseEnabled ? 'enabled' : 'disabled'}`)
+  broadcastState()
 }
 
 function handleSelfDefenseStatus() {
@@ -904,11 +1005,118 @@ bot.on('kicked', (reason, loggedIn) => {
     readableReason = String(reason)
   }
 
-  console.log(`KICKED: ${readableReason} | loggedIn=${loggedIn}`)
+  const kickText = `KICKED: ${readableReason} | loggedIn=${loggedIn}`
+  pushWebLog('error', kickText)
+  console.log(kickText)
+  broadcastState()
 })
 
 bot.on('error', (err) => {
   const code = err && err.code ? ` code=${err.code}` : ''
   const syscall = err && err.syscall ? ` syscall=${err.syscall}` : ''
-  console.log(`BOT ERROR:${code}${syscall} message=${err?.message || String(err)}`)
+  const errorText = `BOT ERROR:${code}${syscall} message=${err?.message || String(err)}`
+  pushWebLog('error', errorText)
+  console.log(errorText)
+  broadcastState()
 })
+
+bot.on('end', () => {
+  pushWebLog('system', 'Bot disconnected')
+  broadcastState()
+})
+
+function startWebServer() {
+  const app = express()
+  const server = http.createServer(app)
+
+  io = new Server(server, {
+    cors: {
+      origin: '*'
+    }
+  })
+
+  app.use(express.json())
+  app.use(express.static(path.join(__dirname, 'public')))
+
+  app.get('/api/status', (req, res) => {
+    res.json(getRuntimeState())
+  })
+
+  app.get('/api/settings', (req, res) => {
+    res.json({ ...botSettings })
+  })
+
+  app.post('/api/settings', (req, res) => {
+    const nextSettings = {
+      ...botSettings,
+      ...req.body,
+      port: Number(req.body?.port ?? botSettings.port) || botSettings.port,
+      viewerPort: Number(req.body?.viewerPort ?? botSettings.viewerPort) || botSettings.viewerPort,
+      webPort: Number(req.body?.webPort ?? botSettings.webPort) || botSettings.webPort
+    }
+
+    botSettings.host = nextSettings.host
+    botSettings.port = nextSettings.port
+    botSettings.username = nextSettings.username
+    botSettings.version = nextSettings.version
+    botSettings.viewerPort = nextSettings.viewerPort
+    botSettings.webPort = nextSettings.webPort
+
+    saveBotSettings(botSettings)
+    pushWebLog('system', 'Saved settings. Restart bot process to apply connection changes.')
+
+    res.json({
+      ok: true,
+      settings: botSettings,
+      note: 'Saved. Restart this process to apply host/port/username/version changes.'
+    })
+  })
+
+  app.post('/api/command', (req, res) => {
+    const rawCommand = String(req.body?.command || '').trim()
+    const username = String(req.body?.username || 'WebUI')
+
+    if (!rawCommand) {
+      res.status(400).json({ ok: false, error: 'Missing command' })
+      return
+    }
+
+    const normalizedCommand = rawCommand.startsWith('Bot.') ? rawCommand : `Bot.${rawCommand}`
+    pushWebLog('command', `${username} -> ${normalizedCommand}`)
+    processBotCommand(username, normalizedCommand)
+
+    res.json({ ok: true, command: normalizedCommand })
+  })
+
+  app.post('/api/toggle/:name', (req, res) => {
+    const toggleName = req.params.name
+
+    if (toggleName === 'selfDefense') {
+      handleToggleSelfDefense()
+      return res.json({ ok: true, selfDefenseEnabled })
+    }
+
+    if (toggleName === 'autoEat') {
+      handleAutoEat(!autoEatEnabled)
+      return res.json({ ok: true, autoEatEnabled })
+    }
+
+    return res.status(404).json({ ok: false, error: `Unknown toggle ${toggleName}` })
+  })
+
+  io.on('connection', (socket) => {
+    socket.emit('bootstrap', {
+      state: getRuntimeState(),
+      settings: botSettings,
+      logs: webLogs
+    })
+  })
+
+  server.listen(botSettings.webPort, () => {
+    const message = `Web dashboard running at http://localhost:${botSettings.webPort}`
+    console.log(message)
+    pushWebLog('system', message)
+  })
+}
+
+startWebServer()
