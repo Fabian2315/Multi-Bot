@@ -565,5 +565,3 @@ bot.on('error', (err) => {
   const syscall = err && err.syscall ? ` syscall=${err.syscall}` : ''
   console.log(`BOT ERROR:${code}${syscall} message=${err?.message || String(err)}`)
 })
-
-// Git test
