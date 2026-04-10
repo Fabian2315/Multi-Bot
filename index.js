@@ -11,7 +11,8 @@ const nbt = require('prismarine-nbt')
 const bot = mineflayer.createBot({
   host: 'localhost',
   port: 25565,
-  username: 'Bot'
+  username: 'Bot',
+  version: '1.21.11'
 })
 
 bot.loadPlugin(pathfinder)
@@ -27,6 +28,14 @@ let mcData
 let miningEnabled = false
 let guardPos = null
 let guardAttackInProgress = false
+let selfDefenseEnabled = true
+let selfDefenseInProgress = false
+let recentDamagerEntityId = null
+let recentDamagerAt = 0
+let trackedGoalState = {
+  goal: null,
+  dynamic: false
+}
 
 bot.once('spawn', () => {
   mineflayerViewer(bot, { port: 3008, firstPerson: true })
@@ -101,6 +110,18 @@ bot.on('chat', (username, message) => {
     case message === 'Bot.miner.stop':
       handleStopMiner()
       break
+    case message === 'Bot.selfdefense':
+      handleToggleSelfDefense()
+      break
+    case message === 'Bot.selfdefense.on':
+      handleSetSelfDefense(true)
+      break
+    case message === 'Bot.selfdefense.off':
+      handleSetSelfDefense(false)
+      break
+    case message === 'Bot.selfdefense.status':
+      handleSelfDefenseStatus()
+      break
     case message.startsWith('Bot.collect '):
       const collectArgs = message.slice(12).trim().split(' ')
       if (collectArgs.length !== 2) {
@@ -134,6 +155,35 @@ bot.on('chat', (username, message) => {
   }
 })
 
+function setTrackedGoal(goal, dynamic = false) {
+  trackedGoalState = { goal, dynamic }
+  bot.pathfinder.setGoal(goal, dynamic)
+}
+
+function captureCurrentIntent() {
+  return {
+    goal: {
+      goal: trackedGoalState.goal,
+      dynamic: trackedGoalState.dynamic
+    },
+    pvpTarget: bot.pvp.target || null
+  }
+}
+
+function restoreIntent(intent) {
+  if (!intent) return
+
+  if (intent.goal.goal) {
+    setTrackedGoal(intent.goal.goal, intent.goal.dynamic)
+  } else {
+    setTrackedGoal(null)
+  }
+
+  if (intent.pvpTarget && intent.pvpTarget.isValid !== false) {
+    bot.pvp.attack(intent.pvpTarget)
+  }
+}
+
 
 function handleTest() {
   bot.chat('TEST: success')
@@ -149,7 +199,7 @@ function moveToGuardPos() {
   if (!guardPos) return
 
   bot.pathfinder.setMovements(defaultMove)
-  bot.pathfinder.setGoal(new GoalBlock(
+  setTrackedGoal(new GoalBlock(
     Math.floor(guardPos.x),
     Math.floor(guardPos.y),
     Math.floor(guardPos.z)
@@ -159,7 +209,7 @@ function moveToGuardPos() {
 function stopGuarding() {
   guardPos = null
   bot.pvp.stop()
-  bot.pathfinder.setGoal(null)
+  setTrackedGoal(null)
 }
 
 function handleGuardAtCoordinates(x, y, z) {
@@ -201,7 +251,7 @@ function handleCome(username) {
   }
 
   bot.pathfinder.setMovements(defaultMove)
-  bot.pathfinder.setGoal(new GoalNear(target.position.x, target.position.y, target.position.z, RANGE_GOAL))
+  setTrackedGoal(new GoalNear(target.position.x, target.position.y, target.position.z, RANGE_GOAL))
   bot.chat(`Coming to ${username}`)
 }
 //Go to a specified player
@@ -213,7 +263,7 @@ function handleGoto(targetUsername) {
   }
 
   bot.pathfinder.setMovements(defaultMove)
-  bot.pathfinder.setGoal(new GoalFollow(target, RANGE_GOAL))
+  setTrackedGoal(new GoalFollow(target, RANGE_GOAL))
   bot.chat(`Going to ${targetUsername}`)
 }
 //Follow a specified player, updating the goal as they move
@@ -225,7 +275,7 @@ function handleFollow(targetUsername) {
   }
 
   bot.pathfinder.setMovements(defaultMove)
-  bot.pathfinder.setGoal(new GoalFollow(target, RANGE_GOAL), true)
+  setTrackedGoal(new GoalFollow(target, RANGE_GOAL), true)
   bot.chat(`Following ${targetUsername}`)
 }
 //Attack a specified player, following them and hitting them when in range
@@ -240,7 +290,7 @@ async function handleAttack(targetUsername) {
   await equipBestSword()
 
   bot.pathfinder.setMovements(defaultMove)
-  bot.pathfinder.setGoal(new GoalFollow(target, RANGE_GOAL), true)
+  setTrackedGoal(new GoalFollow(target, RANGE_GOAL), true)
 
   bot.pvp.attack(target)
   bot.pvp.followRange = RANGE_GOAL
@@ -279,7 +329,7 @@ async function handleMiner(blockType) {
       const newZ = originalPos.z + distance * Math.sin(angle)
       const newY = originalPos.y
       bot.pathfinder.setMovements(defaultMove)
-      bot.pathfinder.setGoal(new GoalNear(newX, newY, newZ, 1))
+      setTrackedGoal(new GoalNear(newX, newY, newZ, 1))
       await new Promise((resolve) => {
         const onReached = () => {
           bot.removeListener('goal_reached', onReached)
@@ -310,7 +360,7 @@ async function handleEmptyInventory() {
 
     // Move to the chest
     bot.pathfinder.setMovements(defaultMove)
-    bot.pathfinder.setGoal(new GoalNear(chestBlock.position.x, chestBlock.position.y, chestBlock.position.z, 1))
+    setTrackedGoal(new GoalNear(chestBlock.position.x, chestBlock.position.y, chestBlock.position.z, 1))
 
     // Wait for the bot to reach the chest
     await new Promise((resolve, reject) => {
@@ -354,12 +404,12 @@ function handleStopPvp() {
 }
 //Stop following the current target
 function handleStopFollow() {
-  bot.pathfinder.setGoal(null)
+  setTrackedGoal(null)
   bot.chat('Stopped following target')
 }
 function handleStopMiner() {
   miningEnabled = false
-  bot.pathfinder.setGoal(null)
+  setTrackedGoal(null)
   bot.chat('Stopped miner')
 }
 function handleAutoEat(enable) {
@@ -461,8 +511,146 @@ function printInventoryDebug() {
 //Go to a specific set of coordinates
 function handleGoToPosition(x, y, z) {
   bot.pathfinder.setMovements(defaultMove)
-  bot.pathfinder.setGoal(new GoalNear(x, y, z, RANGE_GOAL), false)
+  setTrackedGoal(new GoalNear(x, y, z, RANGE_GOAL), false)
   bot.chat(`Going to position ${x} ${y} ${z}`)
+}
+
+function handleToggleSelfDefense() {
+  selfDefenseEnabled = !selfDefenseEnabled
+  bot.chat(`Self defense ${selfDefenseEnabled ? 'enabled' : 'disabled'}`)
+}
+
+function handleSetSelfDefense(enabled) {
+  selfDefenseEnabled = enabled
+  bot.chat(`Self defense ${selfDefenseEnabled ? 'enabled' : 'disabled'}`)
+}
+
+function handleSelfDefenseStatus() {
+  bot.chat(`Self defense is currently ${selfDefenseEnabled ? 'enabled' : 'disabled'}`)
+}
+
+function trackRecentDamager(packet) {
+  if (!packet || !bot.entity) return
+
+  const victimId = packet.entityId ?? packet.victimId ?? packet.targetId
+  if (victimId !== bot.entity.id) return
+
+  const attackerId = packet.sourceCauseId ?? packet.sourceDirectId ?? packet.attackerId ?? packet.sourceEntityId
+  if (typeof attackerId !== 'number' || attackerId < 0) return
+
+  recentDamagerEntityId = attackerId
+  recentDamagerAt = Date.now()
+}
+
+function getDamagerEntity() {
+  const now = Date.now()
+  if (recentDamagerEntityId !== null && now - recentDamagerAt <= 2500) {
+    const entity = bot.entities[recentDamagerEntityId]
+    if (entity && entity.isValid !== false) {
+      return entity
+    }
+  }
+
+  return bot.nearestEntity((entity) => {
+    if (!entity) return false
+    if (entity.isValid === false) return false
+    if (entity.id === bot.entity.id) return false
+    if (!entity.position || typeof entity.position.distanceTo !== 'function') return false
+    if (entity.position.distanceTo(bot.entity.position) > 6) return false
+
+    return true
+  })
+}
+
+function waitForEntityToBeDead(entity, timeoutMs = 20000) {
+  return new Promise((resolve) => {
+    if (!entity || entity.isValid === false) {
+      resolve()
+      return
+    }
+
+    const done = () => {
+      cleanup()
+      resolve()
+    }
+
+    const onEntityDead = (deadEntity) => {
+      if (deadEntity?.id === entity.id) done()
+    }
+
+    const onEntityGone = (goneEntity) => {
+      if (goneEntity?.id === entity.id) done()
+    }
+
+    const interval = setInterval(() => {
+      const current = bot.entities[entity.id]
+      if (!current || current.isValid === false || current.health <= 0) {
+        done()
+      }
+    }, 200)
+
+    const timeout = setTimeout(done, timeoutMs)
+
+    function cleanup() {
+      clearInterval(interval)
+      clearTimeout(timeout)
+      bot.removeListener('entityDead', onEntityDead)
+      bot.removeListener('entityGone', onEntityGone)
+    }
+
+    bot.on('entityDead', onEntityDead)
+    bot.on('entityGone', onEntityGone)
+  })
+}
+
+function waitForStoppedAttacking(timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    let finished = false
+
+    const done = () => {
+      if (finished) return
+      finished = true
+      clearTimeout(timeout)
+      bot.removeListener('stoppedAttacking', onStoppedAttacking)
+      resolve()
+    }
+
+    const onStoppedAttacking = () => done()
+    const timeout = setTimeout(done, timeoutMs)
+
+    bot.on('stoppedAttacking', onStoppedAttacking)
+
+    // If attack already ended by the time listener is attached, continue quickly.
+    setImmediate(() => {
+      if (!bot.pvp.target) done()
+    })
+  })
+}
+
+async function retaliateAgainstAttacker() {
+  if (!selfDefenseEnabled || selfDefenseInProgress) return
+
+  const attacker = getDamagerEntity()
+  if (!attacker) return
+  if (attacker.type === 'player') return
+
+  const originalIntent = captureCurrentIntent()
+  selfDefenseInProgress = true
+
+  try {
+    await equipBestSword({ silent: true })
+    bot.pathfinder.setMovements(defaultMove)
+    setTrackedGoal(new GoalFollow(attacker, RANGE_GOAL), true)
+    bot.pvp.attack(attacker)
+    await waitForEntityToBeDead(attacker)
+  } catch (error) {
+    bot.chat(`ERROR: Self defense failed: ${error.message}`)
+  } finally {
+    bot.pvp.stop()
+    await waitForStoppedAttacking()
+    selfDefenseInProgress = false
+    restoreIntent(originalIntent)
+  }
 }
 
 //Helper function to equip the best tool for harvesting a block before collecting it
@@ -509,6 +697,8 @@ async function collectBlockType(blockType, options = {}) {
 }
 
 bot.on('stoppedAttacking', () => {
+  if (selfDefenseInProgress) return
+
   if (guardPos) {
     moveToGuardPos()
   }
@@ -516,6 +706,7 @@ bot.on('stoppedAttacking', () => {
 
 bot.on('physicsTick', () => {
   if (!guardPos) return
+  if (selfDefenseInProgress) return
 
   const currentTarget = bot.pvp.target
   if (currentTarget) {
@@ -544,6 +735,15 @@ bot.on('physicsTick', () => {
   if (entity) {
     handleGuardEntityAttack(entity)
   }
+})
+
+bot._client.on('damage_event', (packet) => {
+  trackRecentDamager(packet)
+})
+
+bot.on('entityHurt', (entity) => {
+  if (entity?.id !== bot.entity?.id) return
+  retaliateAgainstAttacker()
 })
 
 // Log errors and kick reasons:

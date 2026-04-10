@@ -11,6 +11,7 @@ You can use commands to move, follow players, fight, guard an area, mine resourc
 
 - Player navigation (`come`, `goto`, `follow`)
 - Combat (`attack`, guard mode)
+- Self-defense retaliation (toggleable, ignores players)
 - Resource collection (`collect`, `mine`)
 - Survival utility (`autoEat`, manual eat)
 - Inventory utility (`empty` into nearest chest)
@@ -68,6 +69,22 @@ Use these commands in Minecraft chat:
 - `Bot.pvp.stop`
   - What it does: Stops current PvP actions.
   - Syntax: `Bot.pvp.stop`
+
+- `Bot.selfdefense`
+  - What it does: Toggles self-defense mode on/off.
+  - Syntax: `Bot.selfdefense`
+
+- `Bot.selfdefense.on`
+  - What it does: Enables self-defense mode.
+  - Syntax: `Bot.selfdefense.on`
+
+- `Bot.selfdefense.off`
+  - What it does: Disables self-defense mode.
+  - Syntax: `Bot.selfdefense.off`
+
+- `Bot.selfdefense.status`
+  - What it does: Shows whether self-defense is enabled.
+  - Syntax: `Bot.selfdefense.status`
 
 - `Bot.guard.here`
   - What it does: Guards the current position of the command sender.
