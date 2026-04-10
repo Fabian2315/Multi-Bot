@@ -23,6 +23,40 @@ bot.loadPlugin(armorManager)
 
 const RANGE_GOAL = 1
 const EMPTY_INVENTORY_RADIUS = 50
+const SELF_DEFENSE_MAX_TARGET_DISTANCE = 12
+const SELF_DEFENSE_MAX_CHASE_DISTANCE = 14
+const HOSTILE_ENTITY_NAMES = new Set([
+  'zombie',
+  'husk',
+  'drowned',
+  'zombie_villager',
+  'skeleton',
+  'stray',
+  'wither_skeleton',
+  'spider',
+  'cave_spider',
+  'creeper',
+  'enderman',
+  'witch',
+  'slime',
+  'magma_cube',
+  'pillager',
+  'vindicator',
+  'evoker',
+  'ravager',
+  'phantom',
+  'hoglin',
+  'zoglin',
+  'piglin_brute',
+  'silverfish',
+  'endermite',
+  'blaze',
+  'ghast',
+  'guardian',
+  'elder_guardian',
+  'shulker',
+  'warden'
+])
 let defaultMove
 let mcData
 let miningEnabled = false
@@ -34,7 +68,8 @@ let recentDamagerEntityId = null
 let recentDamagerAt = 0
 let trackedGoalState = {
   goal: null,
-  dynamic: false
+  dynamic: false,
+  meta: null
 }
 
 bot.once('spawn', () => {
@@ -155,17 +190,42 @@ bot.on('chat', (username, message) => {
   }
 })
 
-function setTrackedGoal(goal, dynamic = false) {
-  trackedGoalState = { goal, dynamic }
+function setTrackedGoal(goal, dynamic = false, meta = null) {
+  trackedGoalState = { goal, dynamic, meta }
   bot.pathfinder.setGoal(goal, dynamic)
 }
 
 function captureCurrentIntent() {
+  const currentGoal = trackedGoalState.goal
+  const currentMeta = trackedGoalState.meta
+  let goalIntent = {
+    goal: currentGoal,
+    dynamic: trackedGoalState.dynamic,
+    type: 'generic'
+  }
+
+  if (currentMeta?.type === 'follow') {
+    goalIntent = {
+      type: 'follow',
+      dynamic: true,
+      entity: currentMeta.entity || null,
+      username: currentMeta.username || null,
+      range: typeof currentMeta.range === 'number' ? currentMeta.range : RANGE_GOAL
+    }
+  }
+
+  // Recreate follow goals on restore to avoid stale state after temporary PvP overrides.
+  if (goalIntent.type !== 'follow' && currentGoal && currentGoal.constructor?.name === 'GoalFollow' && currentGoal.entity) {
+    goalIntent = {
+      type: 'follow',
+      dynamic: true,
+      entity: currentGoal.entity,
+      range: typeof currentGoal.range === 'number' ? currentGoal.range : RANGE_GOAL
+    }
+  }
+
   return {
-    goal: {
-      goal: trackedGoalState.goal,
-      dynamic: trackedGoalState.dynamic
-    },
+    goal: goalIntent,
     pvpTarget: bot.pvp.target || null
   }
 }
@@ -173,7 +233,20 @@ function captureCurrentIntent() {
 function restoreIntent(intent) {
   if (!intent) return
 
-  if (intent.goal.goal) {
+  if (intent.goal.type === 'follow') {
+    const targetFromName = intent.goal.username ? bot.players[intent.goal.username]?.entity : null
+    const targetEntity = targetFromName || intent.goal.entity
+    if (targetEntity && targetEntity.isValid !== false) {
+      setTrackedGoal(new GoalFollow(targetEntity, intent.goal.range), true, {
+        type: 'follow',
+        entity: targetEntity,
+        username: intent.goal.username || targetEntity.username || null,
+        range: intent.goal.range
+      })
+    } else {
+      setTrackedGoal(null)
+    }
+  } else if (intent.goal.goal) {
     setTrackedGoal(intent.goal.goal, intent.goal.dynamic)
   } else {
     setTrackedGoal(null)
@@ -275,7 +348,12 @@ function handleFollow(targetUsername) {
   }
 
   bot.pathfinder.setMovements(defaultMove)
-  setTrackedGoal(new GoalFollow(target, RANGE_GOAL), true)
+  setTrackedGoal(new GoalFollow(target, RANGE_GOAL), true, {
+    type: 'follow',
+    entity: target,
+    username: targetUsername,
+    range: RANGE_GOAL
+  })
   bot.chat(`Following ${targetUsername}`)
 }
 //Attack a specified player, following them and hitting them when in range
@@ -307,11 +385,18 @@ async function handleMiner(blockType) {
   const originalPos = bot.entity.position.clone()
   bot.chat('Starting miner, searching for ' + blockType)
   while (miningEnabled) {
+    // Pause miner actions while self-defense is running so combat keeps sword equipped.
+    if (selfDefenseInProgress) {
+      await waitMs(200)
+      continue
+    }
+
     const block = bot.findBlock({
       matching: (b) => b && b.name === blockType,
       maxDistance: 64
     })
     if (block) {
+      if (selfDefenseInProgress) continue
       bot.chat(`Found ${blockType} at ${block.position}`)
       PickCorrectTool(block)
       try {
@@ -320,6 +405,7 @@ async function handleMiner(blockType) {
         // Add mandatory 1 tick pause after mining
         await new Promise(resolve => setTimeout(resolve, 50))
       } catch (e) {
+        if (selfDefenseInProgress) continue
         bot.chat(`Failed to mine ${blockType}: ${e.message}`)
       }
     } else {
@@ -330,13 +416,37 @@ async function handleMiner(blockType) {
       const newY = originalPos.y
       bot.pathfinder.setMovements(defaultMove)
       setTrackedGoal(new GoalNear(newX, newY, newZ, 1))
-      await new Promise((resolve) => {
+
+      const movementResult = await new Promise((resolve) => {
         const onReached = () => {
-          bot.removeListener('goal_reached', onReached)
-          resolve()
+          cleanup()
+          resolve('reached')
         }
+
+        const onInterruptedTick = setInterval(() => {
+          if (!miningEnabled || selfDefenseInProgress) {
+            cleanup()
+            resolve('interrupted')
+          }
+        }, 150)
+
+        const timeout = setTimeout(() => {
+          cleanup()
+          resolve('timeout')
+        }, 30000)
+
+        function cleanup() {
+          clearInterval(onInterruptedTick)
+          clearTimeout(timeout)
+          bot.removeListener('goal_reached', onReached)
+        }
+
         bot.on('goal_reached', onReached)
       })
+
+      if (movementResult !== 'reached') {
+        continue
+      }
     }
   }
 }
@@ -546,23 +656,39 @@ function getDamagerEntity() {
   const now = Date.now()
   if (recentDamagerEntityId !== null && now - recentDamagerAt <= 2500) {
     const entity = bot.entities[recentDamagerEntityId]
-    if (entity && entity.isValid !== false) {
+    if (isValidSelfDefenseTarget(entity)) {
       return entity
     }
   }
 
+  // Fallback: if packet attacker is unavailable (common with some damage sources),
+  // pick the nearest valid hostile very close to the bot.
   return bot.nearestEntity((entity) => {
-    if (!entity) return false
-    if (entity.isValid === false) return false
-    if (entity.id === bot.entity.id) return false
-    if (!entity.position || typeof entity.position.distanceTo !== 'function') return false
-    if (entity.position.distanceTo(bot.entity.position) > 6) return false
-
-    return true
+    if (!isValidSelfDefenseTarget(entity)) return false
+    return entity.position.distanceTo(bot.entity.position) <= 6
   })
 }
 
-function waitForEntityToBeDead(entity, timeoutMs = 20000) {
+function isValidSelfDefenseTarget(entity) {
+  if (!entity) return false
+  if (entity.isValid === false) return false
+  if (entity.type === 'player') return false
+  if (!entity.position || typeof entity.position.distanceTo !== 'function') return false
+  if (entity.position.distanceTo(bot.entity.position) > SELF_DEFENSE_MAX_TARGET_DISTANCE) return false
+
+  const entityName = (entity.name || '').toLowerCase()
+  const displayName = (entity.displayName || '').toLowerCase().replace(/\s+/g, '_')
+  const kind = (entity.type || '').toLowerCase()
+
+  if (HOSTILE_ENTITY_NAMES.has(entityName)) return true
+  if (HOSTILE_ENTITY_NAMES.has(displayName)) return true
+  return kind === 'hostile'
+}
+
+function waitForEntityToBeDead(entity, options = {}) {
+  const timeoutMs = options.timeoutMs ?? 20000
+  const maxDistance = options.maxDistance ?? null
+
   return new Promise((resolve) => {
     if (!entity || entity.isValid === false) {
       resolve()
@@ -586,6 +712,13 @@ function waitForEntityToBeDead(entity, timeoutMs = 20000) {
       const current = bot.entities[entity.id]
       if (!current || current.isValid === false || current.health <= 0) {
         done()
+        return
+      }
+
+      if (typeof maxDistance === 'number' && current.position && bot.entity?.position) {
+        if (current.position.distanceTo(bot.entity.position) > maxDistance) {
+          done()
+        }
       }
     }, 200)
 
@@ -627,6 +760,10 @@ function waitForStoppedAttacking(timeoutMs = 1500) {
   })
 }
 
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 async function retaliateAgainstAttacker() {
   if (!selfDefenseEnabled || selfDefenseInProgress) return
 
@@ -642,14 +779,23 @@ async function retaliateAgainstAttacker() {
     bot.pathfinder.setMovements(defaultMove)
     setTrackedGoal(new GoalFollow(attacker, RANGE_GOAL), true)
     bot.pvp.attack(attacker)
-    await waitForEntityToBeDead(attacker)
+    await waitForEntityToBeDead(attacker, { maxDistance: SELF_DEFENSE_MAX_CHASE_DISTANCE })
   } catch (error) {
     bot.chat(`ERROR: Self defense failed: ${error.message}`)
   } finally {
     bot.pvp.stop()
     await waitForStoppedAttacking()
+    await waitMs(1000)
     selfDefenseInProgress = false
     restoreIntent(originalIntent)
+
+    // Some plugins can clear goals shortly after combat state changes.
+    // Reapply intent once more to make recovery deterministic across modes.
+    setTimeout(() => {
+      if (selfDefenseInProgress) return
+      if (bot.pvp.target) return
+      restoreIntent(originalIntent)
+    }, 1000)
   }
 }
 
