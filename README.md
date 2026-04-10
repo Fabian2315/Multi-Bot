@@ -2,6 +2,10 @@
 
 A customizable Minecraft bot built with Mineflayer and plugins for navigation, PvP, block collection, auto-eating, armor management, and inventory handling.
 
+## Important
+
+This project is vibecoded in large parts (including this readme), due to me being a bad dev and honestly I dont have any idea what I'm really doing. Also this code is kinda messy. Im currently a student and dont have to much motivation on hand to learn coding in my free time, so dont expect any changes in how I handle this project.
+
 ## Project Overview
 
 This project runs a local Minecraft bot (`Bot`) that listens to in-game chat commands.
@@ -16,6 +20,15 @@ You can use commands to move, follow players, fight, guard an area, mine resourc
 - Survival utility (`autoEat`, manual eat)
 - Inventory utility (`empty` into nearest chest)
 - Built-in web viewer support via `prismarine-viewer`
+
+## Default Bot Configuration
+
+Current defaults from `index.js`:
+
+- Host: `localhost`
+- Port: `25565`
+- Username: `Bot`
+- Viewer Port: `3008`
 
 ## Requirements
 
@@ -132,11 +145,4 @@ Use these commands in Minecraft chat:
   - What it does: Runs the placeholder test script in `package.json`.
   - Syntax: `npm test`
 
-## Default Bot Configuration
 
-Current defaults from `index.js`:
-
-- Host: `localhost`
-- Port: `25565`
-- Username: `Bot`
-- Viewer Port: `3008`
