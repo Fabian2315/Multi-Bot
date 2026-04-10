@@ -231,6 +231,22 @@ h1 {
   }
 }
 
+.action-btn-primary {
+  background: var(--ok) !important;
+}
+
+.action-btn-primary:hover {
+  opacity: 0.85;
+}
+
+.action-btn-danger {
+  background: var(--warn) !important;
+}
+
+.action-btn-danger:hover {
+  opacity: 0.85;
+}
+
 @media (max-width: 700px) {
   .command-form {
     grid-template-columns: 1fr;

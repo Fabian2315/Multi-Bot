@@ -44,18 +44,26 @@ function saveBotSettings(settings) {
 
 const botSettings = loadBotSettings()
 
-const bot = mineflayer.createBot({
-  host: botSettings.host,
-  port: botSettings.port,
-  username: botSettings.username,
-  version: botSettings.version
-})
+let bot = null
 
-bot.loadPlugin(pathfinder)
-bot.loadPlugin(pvp)
-bot.loadPlugin(collectBlock)
-bot.loadPlugin(autoEat)
-bot.loadPlugin(armorManager)
+function createAndSetupBot() {
+  bot = mineflayer.createBot({
+    host: botSettings.host,
+    port: botSettings.port,
+    username: botSettings.username,
+    version: botSettings.version
+  })
+
+  bot.loadPlugin(pathfinder)
+  bot.loadPlugin(pvp)
+  bot.loadPlugin(collectBlock)
+  bot.loadPlugin(autoEat)
+  bot.loadPlugin(armorManager)
+  
+  return bot
+}
+
+createAndSetupBot()
 
 const RANGE_GOAL = 1
 const EMPTY_INVENTORY_RADIUS = 50
@@ -1025,6 +1033,43 @@ bot.on('end', () => {
   broadcastState()
 })
 
+async function restartBot() {
+  pushWebLog('system', 'Restarting bot...')
+  
+  try {
+    // Disconnect the old bot
+    if (bot && bot.player) {
+      bot.quit()
+      // Wait a bit for the bot to disconnect
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+  } catch (err) {
+    pushWebLog('error', `Error disconnecting old bot: ${err.message}`)
+  }
+  
+  // Reset state variables
+  miningEnabled = false
+  guardPos = null
+  guardAttackInProgress = false
+  selfDefenseEnabled = true
+  selfDefenseInProgress = false
+  recentDamagerEntityId = null
+  recentDamagerAt = 0
+  trackedGoalState = {
+    goal: null,
+    dynamic: false,
+    meta: null
+  }
+  autoEatEnabled = false
+  mcData = null
+  defaultMove = null
+  
+  // Create and setup new bot
+  createAndSetupBot()
+  pushWebLog('system', 'Bot restarted successfully')
+  broadcastState()
+}
+
 function startWebServer() {
   const app = express()
   const server = http.createServer(app)
@@ -1102,6 +1147,22 @@ function startWebServer() {
     }
 
     return res.status(404).json({ ok: false, error: `Unknown toggle ${toggleName}` })
+  })
+
+  app.post('/api/restart-bot', async (req, res) => {
+    try {
+      await restartBot()
+      res.json({ ok: true, message: 'Bot restarted successfully' })
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message })
+    }
+  })
+
+  app.post('/api/shutdown', (req, res) => {
+    res.json({ ok: true, message: 'Shutting down...' })
+    setTimeout(() => {
+      process.exit(0)
+    }, 500)
   })
 
   io.on('connection', (socket) => {

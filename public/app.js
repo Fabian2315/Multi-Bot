@@ -10,6 +10,8 @@ const settingsNotice = document.getElementById('settingsNotice')
 const logsView = document.getElementById('logsView')
 const viewerFrame = document.getElementById('viewerFrame')
 const viewerLink = document.getElementById('viewerLink')
+const restartBotBtn = document.getElementById('restartBotBtn')
+const shutdownBtn = document.getElementById('shutdownBtn')
 
 let latestState = null
 
@@ -130,6 +132,26 @@ settingsForm.addEventListener('submit', async (event) => {
   } catch (error) {
     settingsNotice.style.color = '#a63a50'
     settingsNotice.textContent = error.message
+  }
+})
+
+restartBotBtn.addEventListener('click', async () => {
+  if (!confirm('Restart the bot? The webserver will keep running.')) return
+  try {
+    await postJson('/api/restart-bot')
+    appendLog({ ts: new Date().toISOString(), type: 'system', message: 'Bot restart initiated' })
+  } catch (error) {
+    appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+  }
+})
+
+shutdownBtn.addEventListener('click', async () => {
+  if (!confirm('Shutdown the entire server? This will stop both the bot and webserver.')) return
+  try {
+    await postJson('/api/shutdown')
+    appendLog({ ts: new Date().toISOString(), type: 'system', message: 'Server shutting down...' })
+  } catch (error) {
+    appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
   }
 })
 
