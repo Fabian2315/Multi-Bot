@@ -77,6 +77,7 @@ bot.once('spawn', () => {
   mcData = require('minecraft-data')(bot.version)
   defaultMove = new Movements(bot)
   handleAutoEat(true)
+  handleSelfDefenseStatus()
 })
 
 // Listen for chat messages and handle commands. syntax: Bot.<command> [args]

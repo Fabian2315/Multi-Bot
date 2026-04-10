@@ -37,19 +37,7 @@ Current defaults from `index.js`:
 ## Requirements
 
 - Node.js (LTS recommended)
-- A running Minecraft server (default in this project: `localhost:25565`)
-
-## Install
-
-```bash
-npm install
-```
-
-## Run
-
-```bash
-node index.js
-```
+- A running Minecraft server in offline mode (default in this project: `localhost:25565`)
 
 ## Chat Command Reference
 
@@ -142,11 +130,5 @@ Use these commands in Minecraft chat:
 - `Bot.empty`
   - What it does: Empties inventory into the nearest chest (within radius).
   - Syntax: `Bot.empty`
-
-## NPM Script
-
-- `npm test`
-  - What it does: Runs the placeholder test script in `package.json`.
-  - Syntax: `npm test`
 
 
