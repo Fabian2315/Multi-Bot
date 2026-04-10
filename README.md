@@ -12,32 +12,43 @@ For the bot to respond in the in game chat, you need to go into the server.prope
 
 ## Project Overview
 
-This project runs a local Minecraft bot (`Bot`) that listens to in-game chat commands.
-You can use commands to move, follow players, fight, guard an area, mine resources, collect blocks, eat automatically, and empty inventory into nearby chests.
+This project runs a local Minecraft bot (`Bot`) that listens to in-game chat commands and exposes a local web dashboard for monitoring and control.
+You can use commands to move, follow players, fight, guard an area, mine resources, collect blocks, eat automatically, manage armor, and empty inventory into nearby chests.
 
 ## Features
 
-- Player navigation (`come`, `goto`, `follow`)
+- Player navigation (`come`, `goto`, `follow`, `goto.nearest`)
 - Combat (`attack`, guard mode)
 - Self-defense retaliation (toggleable, ignores players)
+- Automatic armor management via `mineflayer-armor-manager`
 - Resource collection (`collect`, `mine`)
 - Survival utility (`autoEat`, manual eat)
 - Inventory utility (`empty` into nearest chest)
-- Built-in web viewer support via `prismarine-viewer`
+- Built-in 3D web viewer via `prismarine-viewer`
+- **Web dashboard** at `http://localhost:<webPort>` with:
+  - Live bot status and toggle controls (self-defense, auto-eat)
+  - Real-time log stream via Socket.io
+  - Send commands from the browser
+  - View and save bot settings (host, port, username, version, viewer port, web port)
+  - Restart or shut down the bot process remotely
 
-## Default Bot Configuration
+## Bot Configuration
 
-Current defaults from `index.js`:
+Settings are stored in `bot-settings.json` and loaded on startup. You can edit the file directly or use the web dashboard settings panel.
 
-- Host: `localhost`
-- Port: `25565`
-- Username: `Bot`
-- Viewer Port: `3008`
+| Setting | Default | Description |
+|---|---|---|
+| `host` | `localhost` | Minecraft server host |
+| `port` | `25565` | Minecraft server port |
+| `username` | `Bot` | Bot's in-game username |
+| `version` | `1.21.11` | Minecraft version |
+| `viewerPort` | `3008` | Port for the 3D prismarine viewer |
+| `webPort` | `3000` | Port for the web dashboard |
 
 ## Requirements
 
 - Node.js (LTS recommended)
-- A running Minecraft server in offline mode (default in this project: `localhost:25565`)
+- A running Minecraft server in offline mode (default: `localhost:25565`)
 
 ## Chat Command Reference
 
@@ -58,6 +69,10 @@ Use these commands in Minecraft chat:
 - `Bot.goto <x> <y> <z>`
   - What it does: Bot goes to specific coordinates.
   - Syntax: `Bot.goto 100 64 -20`
+
+- `Bot.goto.nearest`
+  - What it does: Bot goes to the nearest player.
+  - Syntax: `Bot.goto.nearest`
 
 - `Bot.follow <player>`
   - What it does: Bot continuously follows a player.
@@ -104,11 +119,11 @@ Use these commands in Minecraft chat:
   - Syntax: `Bot.guard.stop`
 
 - `Bot.collect <blockType> <number>`
-  - What it does: Collects a specific block type repeatedly.
+  - What it does: Collects a specific block type repeatedly, equipping the correct tool first.
   - Syntax: `Bot.collect oak_log 5`
 
 - `Bot.mine <blockType>`
-  - What it does: Starts a continuous mining loop for the given block type.
+  - What it does: Starts a continuous mining loop for the given block type. Pauses during self-defense.
   - Syntax: `Bot.mine coal_ore`
 
 - `Bot.miner.stop`
@@ -128,7 +143,7 @@ Use these commands in Minecraft chat:
   - Syntax: `Bot.eat`
 
 - `Bot.empty`
-  - What it does: Empties inventory into the nearest chest (within radius).
+  - What it does: Empties inventory into the nearest chest within 50 blocks.
   - Syntax: `Bot.empty`
 
 
