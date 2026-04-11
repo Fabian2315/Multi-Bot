@@ -7,14 +7,63 @@
   "starterUsername": "Bot",
   "starterAuth": "offline",
   "starterToken": "",
+  "viewerEnabled": false,
   "viewerTargetBotId": "starter",
-  "bots": [],
+  "bots": [
+    {
+      "id": "bot2",
+      "username": "Bot2",
+      "auth": "offline",
+      "token": ""
+    },
+    {
+      "id": "bot3",
+      "username": "Bot3",
+      "auth": "offline",
+      "token": ""
+    },
+    {
+      "id": "bot4",
+      "username": "Bot4",
+      "auth": "offline",
+      "token": ""
+    },
+    {
+      "id": "bot5",
+      "username": "Bot5",
+      "auth": "offline",
+      "token": ""
+    },
+    {
+      "id": "bot6",
+      "username": "Bot6",
+      "auth": "offline",
+      "token": ""
+    },
+    {
+      "id": "bot7",
+      "username": "Bot7",
+      "auth": "offline",
+      "token": ""
+    },
+    {
+      "id": "bot8",
+      "username": "Bot8",
+      "auth": "offline",
+      "token": ""
+    }
+  ],
   "groups": [
     {
-      "id": "group-test-group-mntleoa6",
-      "name": "Test group",
+      "id": "group-botcluster-mnu39xnj",
+      "name": "botcluster",
       "botIds": [
-        "starter"
+        "bot3",
+        "bot4",
+        "bot5",
+        "bot6",
+        "bot7",
+        "bot8"
       ]
     }
   ]

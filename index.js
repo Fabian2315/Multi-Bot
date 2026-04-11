@@ -28,6 +28,7 @@ const DEFAULT_BOT_SETTINGS = {
   starterUsername: 'Bot',
   starterAuth: 'offline',
   starterToken: '',
+  viewerEnabled: true,
   viewerTargetBotId: STARTER_BOT_ID,
   bots: [],
   groups: []
@@ -59,6 +60,7 @@ function loadBotSettings() {
       starterUsername: String(parsed.starterUsername || parsed.username || DEFAULT_BOT_SETTINGS.starterUsername),
       starterAuth: normalizeAuth(parsed.starterAuth),
       starterToken: String(parsed.starterToken || ''),
+      viewerEnabled: typeof parsed.viewerEnabled === 'boolean' ? parsed.viewerEnabled : DEFAULT_BOT_SETTINGS.viewerEnabled,
       viewerTargetBotId: String(parsed.viewerTargetBotId || STARTER_BOT_ID),
       bots: safeArray(parsed.bots)
         .map((bot) => ({
@@ -93,6 +95,7 @@ function saveBotSettings(settings) {
     starterUsername: String(settings.starterUsername || DEFAULT_BOT_SETTINGS.starterUsername),
     starterAuth: normalizeAuth(settings.starterAuth),
     starterToken: String(settings.starterToken || ''),
+    viewerEnabled: typeof settings.viewerEnabled === 'boolean' ? settings.viewerEnabled : DEFAULT_BOT_SETTINGS.viewerEnabled,
     viewerTargetBotId: String(settings.viewerTargetBotId || STARTER_BOT_ID),
     bots: safeArray(settings.bots)
       .map((bot) => ({
@@ -119,7 +122,7 @@ const runtimes = new Map()
 const webLogs = []
 let io = null
 let lastStateSignature = ''
-let viewerEnabled = true
+let viewerEnabled = Boolean(botSettings.viewerEnabled)
 let viewerAttachedBotId = null
 
 const RANGE_GOAL = 1
@@ -257,6 +260,10 @@ function startViewerFor(botId) {
   const runtime = runtimes.get(botId)
   if (!runtime?.bot?.player) return false
 
+  if (viewerAttachedBotId === botId && runtime.bot.viewer && typeof runtime.bot.viewer.close === 'function') {
+    return true
+  }
+
   if (viewerAttachedBotId && viewerAttachedBotId !== botId) {
     stopViewer()
   }
@@ -266,7 +273,11 @@ function startViewerFor(botId) {
     return true
   }
 
-  mineflayerViewer(runtime.bot, { port: botSettings.viewerPort, firstPerson: true })
+  mineflayerViewer(runtime.bot, {
+    port: botSettings.viewerPort,
+    firstPerson: true,
+    viewDistance: 5
+  })
   viewerAttachedBotId = botId
   pushWebLog('system', `Prismarine viewer active on ${botId} at ${getViewerUrl()}`, botId)
   return true
@@ -289,6 +300,7 @@ function setViewerTarget(botId) {
 
 function setViewerEnabled(enabled) {
   viewerEnabled = Boolean(enabled)
+  botSettings.viewerEnabled = viewerEnabled
 
   if (!viewerEnabled) {
     stopViewer()
@@ -373,7 +385,18 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
   }
 
   const bot = mineflayer.createBot(botOptions)
+
+  // Load a fresh pathfinder session for this specific bot instance.
+  // Each bot gets its own pathfinder state and separate search settings.
   bot.loadPlugin(pathfinder)
+  bot.once('inject_allowed', () => {
+    if (!bot.pathfinder) return
+    bot.pathfinder.thinkTimeout = 1000
+    bot.pathfinder.tickTimeout = 15
+    bot.pathfinder.searchRadius = 64
+    bot.pathfinder.enablePathShortcut = true
+  })
+
   bot.loadPlugin(pvp)
   bot.loadPlugin(collectBlock)
   bot.loadPlugin(autoEat)
@@ -1178,6 +1201,13 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
       const block = mcData.blocksByName[name]
       if (block) defaultMove.blocksToAvoid.add(block.id)
     }
+
+    bot.pathfinder.setMovements(defaultMove)
+
+    // Smooth multi-bot movement by reducing per-bot pathfinder tick workload.
+    // This keeps each bot from using too much time in a single main loop pass.
+    bot.pathfinder.tickTimeout = 10
+    bot.pathfinder.enablePathShortcut = true
 
     pushWebLog('system', `Spawned as ${username} on ${botSettings.host}:${botSettings.port}`, id)
     io?.emit('auth_done', { botId: id })
