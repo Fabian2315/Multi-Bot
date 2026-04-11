@@ -1,20 +1,23 @@
 const socket = io()
 
 const statusPill = document.getElementById('statusPill')
+const botList = document.getElementById('botList')
+const groupList = document.getElementById('groupList')
+const commandTarget = document.getElementById('commandTarget')
+const commandForm = document.getElementById('commandForm')
+const commandInput = document.getElementById('commandInput')
 const toggleSelfDefense = document.getElementById('toggleSelfDefense')
 const toggleAutoEat = document.getElementById('toggleAutoEat')
 const toggleSilentMode = document.getElementById('toggleSilentMode')
-const commandForm = document.getElementById('commandForm')
-const commandInput = document.getElementById('commandInput')
-const settingsForm = document.getElementById('settingsForm')
-const settingsNotice = document.getElementById('settingsNotice')
+const toggleViewer = document.getElementById('toggleViewer')
+const restartBotBtn = document.getElementById('restartBotBtn')
+const shutdownBtn = document.getElementById('shutdownBtn')
 const logsView = document.getElementById('logsView')
 const viewerFrame = document.getElementById('viewerFrame')
 const viewerLink = document.getElementById('viewerLink')
 const viewerNotice = document.getElementById('viewerNotice')
-const toggleViewer = document.getElementById('toggleViewer')
-const restartBotBtn = document.getElementById('restartBotBtn')
-const shutdownBtn = document.getElementById('shutdownBtn')
+const settingsForm = document.getElementById('settingsForm')
+const settingsNotice = document.getElementById('settingsNotice')
 const healthFill = document.getElementById('healthFill')
 const healthValue = document.getElementById('healthValue')
 const hungerFill = document.getElementById('hungerFill')
@@ -24,7 +27,37 @@ const inventorySummary = document.getElementById('inventorySummary')
 const inventoryEmpty = document.getElementById('inventoryEmpty')
 const inventoryList = document.getElementById('inventoryList')
 
-let latestState = null
+const openAddBotBtn = document.getElementById('openAddBotBtn')
+const closeAddBotBtn = document.getElementById('closeAddBotBtn')
+const addBotModal = document.getElementById('addBotModal')
+const singleBotForm = document.getElementById('singleBotForm')
+const batchBotForm = document.getElementById('batchBotForm')
+const createGroupBtn = document.getElementById('createGroupBtn')
+const groupForm = document.getElementById('groupForm')
+const cancelGroupBtn = document.getElementById('cancelGroupBtn')
+const groupName = document.getElementById('groupName')
+const groupBotChecklist = document.getElementById('groupBotChecklist')
+const groupFormMode = document.getElementById('groupFormMode')
+const groupSaveBtn = document.getElementById('groupSaveBtn')
+const starterAuth = document.getElementById('starterAuth')
+const starterTokenRow = document.getElementById('starterTokenRow')
+const viewerTargetBotId = document.getElementById('viewerTargetBotId')
+const switchViewerBtn = document.getElementById('switchViewerBtn')
+const authModal = document.getElementById('authModal')
+const authModalText = document.getElementById('authModalText')
+const closeAuthModalBtn = document.getElementById('closeAuthModalBtn')
+
+let dashboardState = {
+  bots: [],
+  groups: [],
+  viewerEnabled: true,
+  viewerTargetBotId: 'starter',
+  viewerActiveBotId: null,
+  viewerUrl: 'http://localhost:3008'
+}
+let selectedTarget = 'starter'
+let selectedBotForDetails = 'starter'
+let editingGroupId = null
 
 function clampToPercent(value, max) {
   if (typeof value !== 'number' || Number.isNaN(value)) return 0
@@ -32,75 +65,21 @@ function clampToPercent(value, max) {
   return Math.max(0, Math.min(100, (value / max) * 100))
 }
 
+function botById(botId) {
+  return dashboardState.bots.find((bot) => bot.id === botId) || null
+}
+
+function selectedBot() {
+  return botById(selectedBotForDetails) || dashboardState.bots[0] || null
+}
+
 function formatStackName(name) {
   return String(name || 'unknown_item').replace(/_/g, ' ')
 }
 
-function renderVitals(state) {
-  const health = typeof state.health === 'number' ? state.health : null
-  const hunger = typeof state.hunger === 'number' ? state.hunger : null
-
-  healthFill.style.width = `${clampToPercent(health, 20)}%`
-  hungerFill.style.width = `${clampToPercent(hunger, 20)}%`
-
-  healthValue.textContent = health === null ? '-- / 20' : `${health.toFixed(1)} / 20`
-  hungerValue.textContent = hunger === null ? '-- / 20' : `${hunger} / 20`
-
-  const pos = state.position
-  coordValue.textContent = pos
-    ? `${pos.x.toFixed(1)},  ${pos.y.toFixed(1)},  ${pos.z.toFixed(1)}`
-    : '-- / -- / --'
-}
-
-function renderInventory(state) {
-  const inventory = Array.isArray(state.inventory) ? state.inventory : []
-  const totalItems = inventory.reduce((sum, item) => sum + (Number(item.count) || 0), 0)
-  inventorySummary.textContent = `${inventory.length} stacks | ${totalItems} items`
-  inventoryEmpty.style.display = inventory.length ? 'none' : 'block'
-  inventoryList.innerHTML = ''
-
-  inventory.forEach((item) => {
-    const line = document.createElement('li')
-    line.innerHTML = `<span>${formatStackName(item.name)}</span><strong>x${item.count}</strong>`
-    inventoryList.appendChild(line)
-  })
-}
-
-function setStatus(state) {
-  latestState = state
-  const connected = state.connected ? 'Online' : 'Offline'
-  statusPill.textContent = `${connected} | ${state.username} @ ${state.host}:${state.port}`
-  statusPill.style.background = state.connected ? 'rgba(28,124,84,0.35)' : 'rgba(166,58,80,0.35)'
-
-  toggleSelfDefense.textContent = `Self Defense: ${state.selfDefenseEnabled ? 'ON' : 'OFF'}`
-  toggleSelfDefense.style.background = state.selfDefenseEnabled ? '#1c7c54' : '#a63a50'
-
-  toggleAutoEat.textContent = `Auto Eat: ${state.autoEatEnabled ? 'ON' : 'OFF'}`
-  toggleAutoEat.style.background = state.autoEatEnabled ? '#1c7c54' : '#a63a50'
-
-  toggleSilentMode.textContent = `Silent Mode: ${state.silentModeEnabled ? 'ON' : 'OFF'}`
-  toggleSilentMode.style.background = state.silentModeEnabled ? '#1c7c54' : '#a63a50'
-
-  toggleViewer.textContent = `Viewer: ${state.viewerEnabled ? 'ON' : 'OFF'}`
-  toggleViewer.style.background = state.viewerEnabled ? '#1c7c54' : '#a63a50'
-
-  if (state.viewerEnabled) {
-    if (viewerFrame.src !== state.viewerUrl) {
-      viewerFrame.src = state.viewerUrl
-    }
-    viewerNotice.textContent = `Viewer is live at ${state.viewerUrl}`
-  } else {
-    viewerFrame.src = 'about:blank'
-    viewerNotice.textContent = 'Viewer is disabled. Toggle it ON to start Prismarine Viewer.'
-  }
-
-  viewerLink.href = state.viewerUrl
-  renderVitals(state)
-  renderInventory(state)
-}
-
 function appendLog(log) {
-  logsView.textContent += `[${log.ts}] [${log.type}] ${log.message}\n`
+  const botPart = log.botId ? ` [${log.botId}]` : ''
+  logsView.textContent += `[${log.ts}] [${log.type}]${botPart} ${log.message}\n`
   logsView.scrollTop = logsView.scrollHeight
 }
 
@@ -119,31 +98,328 @@ async function postJson(url, body = {}) {
   return response.json()
 }
 
+async function deleteJson(url) {
+  const response = await fetch(url, { method: 'DELETE' })
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(errorText || `Request failed: ${response.status}`)
+  }
+  return response.json()
+}
+
+async function putJson(url, body = {}) {
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(errorText || `Request failed: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+function renderBots() {
+  botList.innerHTML = ''
+
+  const allRow = document.createElement('button')
+  allRow.className = `list-row ${selectedTarget === 'all' ? 'active' : ''}`
+  allRow.textContent = 'All Bots'
+  allRow.addEventListener('click', () => {
+    selectedTarget = 'all'
+    renderTargets()
+    renderBots()
+  })
+  botList.appendChild(allRow)
+
+  dashboardState.bots.forEach((bot) => {
+    const row = document.createElement('div')
+    row.className = `list-row ${selectedBotForDetails === bot.id ? 'active' : ''}`
+
+    const left = document.createElement('button')
+    left.className = 'linkish'
+    left.innerHTML = `<span class="dot ${bot.connected ? 'online' : 'offline'}"></span>${bot.username} <small>(${bot.id})</small>`
+    left.addEventListener('click', () => {
+      selectedBotForDetails = bot.id
+      selectedTarget = bot.id
+      renderAll()
+    })
+
+    row.appendChild(left)
+
+    if (bot.id !== 'starter') {
+      const del = document.createElement('button')
+      del.className = 'mini-btn danger'
+      del.textContent = 'Delete'
+      del.addEventListener('click', async () => {
+        if (!confirm(`Delete bot ${bot.username}?`)) return
+        try {
+          await deleteJson(`/api/bots/${bot.id}`)
+        } catch (error) {
+          appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+        }
+      })
+      row.appendChild(del)
+    }
+
+    botList.appendChild(row)
+  })
+}
+
+function renderGroups() {
+  groupList.innerHTML = ''
+  dashboardState.groups.forEach((group) => {
+    const row = document.createElement('div')
+    row.className = `list-row ${selectedTarget === `group:${group.id}` ? 'active' : ''}`
+
+    const left = document.createElement('button')
+    left.className = 'linkish'
+    left.textContent = `${group.name} (${group.botIds.length})`
+    left.addEventListener('click', () => {
+      selectedTarget = `group:${group.id}`
+      renderTargets()
+      renderGroups()
+    })
+
+    const del = document.createElement('button')
+    del.className = 'mini-btn danger'
+    del.textContent = 'Delete'
+    del.addEventListener('click', async () => {
+      try {
+        await deleteJson(`/api/groups/${group.id}`)
+      } catch (error) {
+        appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+      }
+    })
+
+    const edit = document.createElement('button')
+    edit.className = 'mini-btn'
+    edit.textContent = 'Edit'
+    edit.addEventListener('click', () => {
+      openGroupForm(group)
+    })
+
+    row.appendChild(left)
+    row.appendChild(edit)
+    row.appendChild(del)
+    groupList.appendChild(row)
+  })
+}
+
+function renderTargets() {
+  const oldValue = selectedTarget
+  commandTarget.innerHTML = ''
+
+  const allOption = document.createElement('option')
+  allOption.value = 'all'
+  allOption.textContent = 'All Bots'
+  commandTarget.appendChild(allOption)
+
+  dashboardState.bots.forEach((bot) => {
+    const option = document.createElement('option')
+    option.value = bot.id
+    option.textContent = `Bot: ${bot.username} (${bot.id})`
+    commandTarget.appendChild(option)
+  })
+
+  dashboardState.groups.forEach((group) => {
+    const option = document.createElement('option')
+    option.value = `group:${group.id}`
+    option.textContent = `Group: ${group.name}`
+    commandTarget.appendChild(option)
+  })
+
+  if ([...commandTarget.options].some((option) => option.value === oldValue)) {
+    commandTarget.value = oldValue
+  } else if ([...commandTarget.options].some((option) => option.value === selectedTarget)) {
+    commandTarget.value = selectedTarget
+  } else {
+    commandTarget.value = 'all'
+    selectedTarget = 'all'
+  }
+}
+
+function renderViewerTargetSelect() {
+  const old = viewerTargetBotId.value
+  viewerTargetBotId.innerHTML = ''
+  dashboardState.bots.forEach((bot) => {
+    const option = document.createElement('option')
+    option.value = bot.id
+    option.textContent = `${bot.username} (${bot.id})`
+    viewerTargetBotId.appendChild(option)
+  })
+
+  if ([...viewerTargetBotId.options].some((o) => o.value === dashboardState.viewerTargetBotId)) {
+    viewerTargetBotId.value = dashboardState.viewerTargetBotId
+  } else if ([...viewerTargetBotId.options].some((o) => o.value === old)) {
+    viewerTargetBotId.value = old
+  }
+}
+
+function renderVitals() {
+  const bot = selectedBot()
+  if (!bot) {
+    healthFill.style.width = '0%'
+    hungerFill.style.width = '0%'
+    healthValue.textContent = '-- / 20'
+    hungerValue.textContent = '-- / 20'
+    coordValue.textContent = '-- / -- / --'
+    inventorySummary.textContent = '0 stacks | 0 items'
+    inventoryEmpty.style.display = 'block'
+    inventoryList.innerHTML = ''
+    return
+  }
+
+  const health = typeof bot.health === 'number' ? bot.health : null
+  const hunger = typeof bot.hunger === 'number' ? bot.hunger : null
+
+  healthFill.style.width = `${clampToPercent(health, 20)}%`
+  hungerFill.style.width = `${clampToPercent(hunger, 20)}%`
+
+  healthValue.textContent = health === null ? '-- / 20' : `${health.toFixed(1)} / 20`
+  hungerValue.textContent = hunger === null ? '-- / 20' : `${hunger} / 20`
+
+  const pos = bot.position
+  coordValue.textContent = pos ? `${pos.x.toFixed(1)},  ${pos.y.toFixed(1)},  ${pos.z.toFixed(1)}` : '-- / -- / --'
+
+  const inventory = Array.isArray(bot.inventory) ? bot.inventory : []
+  const totalItems = inventory.reduce((sum, item) => sum + (Number(item.count) || 0), 0)
+  inventorySummary.textContent = `${inventory.length} stacks | ${totalItems} items`
+  inventoryEmpty.style.display = inventory.length ? 'none' : 'block'
+  inventoryList.innerHTML = ''
+
+  inventory.forEach((item) => {
+    const line = document.createElement('li')
+    line.innerHTML = `<span>${formatStackName(item.name)}</span><strong>x${item.count}</strong>`
+    inventoryList.appendChild(line)
+  })
+
+  toggleSelfDefense.textContent = `Self Defense: ${bot.selfDefenseEnabled ? 'ON' : 'OFF'}`
+  toggleSelfDefense.style.background = bot.selfDefenseEnabled ? '#1c7c54' : '#a63a50'
+
+  toggleAutoEat.textContent = `Auto Eat: ${bot.autoEatEnabled ? 'ON' : 'OFF'}`
+  toggleAutoEat.style.background = bot.autoEatEnabled ? '#1c7c54' : '#a63a50'
+
+  toggleSilentMode.textContent = `Silent Mode: ${bot.silentModeEnabled ? 'ON' : 'OFF'}`
+  toggleSilentMode.style.background = bot.silentModeEnabled ? '#1c7c54' : '#a63a50'
+}
+
+function renderStatusAndViewer() {
+  const online = dashboardState.bots.filter((bot) => bot.connected).length
+  statusPill.textContent = `${online}/${dashboardState.bots.length} bots online @ ${dashboardState.host}:${dashboardState.port}`
+  statusPill.style.background = online ? 'rgba(28,124,84,0.35)' : 'rgba(166,58,80,0.35)'
+
+  toggleViewer.textContent = `Viewer: ${dashboardState.viewerEnabled ? 'ON' : 'OFF'}`
+  toggleViewer.style.background = dashboardState.viewerEnabled ? '#1c7c54' : '#a63a50'
+
+  viewerLink.href = dashboardState.viewerUrl
+
+  if (dashboardState.viewerEnabled) {
+    if (viewerFrame.src !== dashboardState.viewerUrl) {
+      viewerFrame.src = dashboardState.viewerUrl
+    }
+    viewerNotice.textContent = `Viewer target: ${dashboardState.viewerTargetBotId || 'none'} | active: ${dashboardState.viewerActiveBotId || 'none'}`
+  } else {
+    viewerFrame.src = 'about:blank'
+    viewerNotice.textContent = 'Viewer is disabled.'
+  }
+}
+
+function renderGroupChecklist() {
+  groupBotChecklist.innerHTML = ''
+  dashboardState.bots.forEach((bot) => {
+    const label = document.createElement('label')
+    label.className = 'check-row'
+    label.innerHTML = `<input type="checkbox" value="${bot.id}"> ${bot.username} (${bot.id})`
+    groupBotChecklist.appendChild(label)
+  })
+}
+
+function setGroupMode(mode) {
+  if (mode === 'edit') {
+    groupFormMode.textContent = 'Edit Group'
+    groupSaveBtn.textContent = 'Update Group'
+  } else {
+    groupFormMode.textContent = 'Create Group'
+    groupSaveBtn.textContent = 'Save Group'
+  }
+}
+
+function resetGroupForm() {
+  editingGroupId = null
+  groupName.value = ''
+  renderGroupChecklist()
+  setGroupMode('create')
+}
+
+function openGroupForm(group = null) {
+  groupForm.classList.remove('hidden')
+  renderGroupChecklist()
+
+  if (!group) {
+    resetGroupForm()
+    return
+  }
+
+  editingGroupId = group.id
+  groupName.value = group.name
+  const selected = new Set(group.botIds)
+  groupBotChecklist.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+    input.checked = selected.has(input.value)
+  })
+  setGroupMode('edit')
+}
+
+function renderAll() {
+  renderTargets()
+  renderBots()
+  renderGroups()
+  renderViewerTargetSelect()
+  renderVitals()
+  renderStatusAndViewer()
+}
+
 function readSettingsForm() {
   const data = new FormData(settingsForm)
   return {
     host: String(data.get('host') || '').trim(),
     port: Number(data.get('port')),
-    username: String(data.get('username') || '').trim(),
     version: String(data.get('version') || '').trim(),
     viewerPort: Number(data.get('viewerPort')),
-    webPort: Number(data.get('webPort'))
+    webPort: Number(data.get('webPort')),
+    starterUsername: String(data.get('starterUsername') || '').trim(),
+    starterAuth: String(data.get('starterAuth') || 'offline'),
+    starterToken: String(data.get('starterToken') || ''),
+    viewerTargetBotId: String(data.get('viewerTargetBotId') || '')
   }
 }
 
 function fillSettingsForm(settings) {
   settingsForm.host.value = settings.host
   settingsForm.port.value = settings.port
-  settingsForm.username.value = settings.username
   settingsForm.version.value = settings.version
   settingsForm.viewerPort.value = settings.viewerPort
   settingsForm.webPort.value = settings.webPort
+  settingsForm.starterUsername.value = settings.starterUsername || 'Bot'
+  settingsForm.starterAuth.value = settings.starterAuth || 'offline'
+  settingsForm.starterToken.value = settings.starterToken || ''
+  starterTokenRow.style.display = settingsForm.starterAuth.value === 'token' ? 'grid' : 'none'
 }
 
+commandTarget.addEventListener('change', () => {
+  selectedTarget = commandTarget.value
+  renderBots()
+  renderGroups()
+})
+
 document.querySelectorAll('.tab').forEach((button) => {
+  if (!button.dataset.tab) return
   button.addEventListener('click', () => {
     const target = button.dataset.tab
-    document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'))
+    document.querySelectorAll('.tab[data-tab]').forEach((tab) => tab.classList.remove('active'))
     document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.remove('active'))
     button.classList.add('active')
     document.getElementById(target).classList.add('active')
@@ -153,16 +429,29 @@ document.querySelectorAll('.tab').forEach((button) => {
 document.querySelectorAll('[data-command]').forEach((button) => {
   button.addEventListener('click', async () => {
     try {
-      await postJson('/api/command', { command: button.dataset.command, username: 'WebUI' })
+      await postJson('/api/command', { command: button.dataset.command, username: 'WebUI', target: selectedTarget })
     } catch (error) {
       appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
     }
   })
 })
 
+commandForm.addEventListener('submit', async (event) => {
+  event.preventDefault()
+  const command = commandInput.value.trim()
+  if (!command) return
+
+  try {
+    await postJson('/api/command', { command, username: 'WebUI', target: selectedTarget })
+    commandInput.value = ''
+  } catch (error) {
+    appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+  }
+})
+
 toggleSelfDefense.addEventListener('click', async () => {
   try {
-    await postJson('/api/toggle/selfDefense')
+    await postJson('/api/toggle/selfDefense', { target: selectedTarget })
   } catch (error) {
     appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
   }
@@ -170,7 +459,7 @@ toggleSelfDefense.addEventListener('click', async () => {
 
 toggleAutoEat.addEventListener('click', async () => {
   try {
-    await postJson('/api/toggle/autoEat')
+    await postJson('/api/toggle/autoEat', { target: selectedTarget })
   } catch (error) {
     appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
   }
@@ -178,7 +467,7 @@ toggleAutoEat.addEventListener('click', async () => {
 
 toggleSilentMode.addEventListener('click', async () => {
   try {
-    await postJson('/api/toggle/silent')
+    await postJson('/api/toggle/silent', { target: selectedTarget })
   } catch (error) {
     appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
   }
@@ -192,14 +481,19 @@ toggleViewer.addEventListener('click', async () => {
   }
 })
 
-commandForm.addEventListener('submit', async (event) => {
-  event.preventDefault()
-  const command = commandInput.value.trim()
-  if (!command) return
-
+restartBotBtn.addEventListener('click', async () => {
+  if (!confirm('Restart all bots?')) return
   try {
-    await postJson('/api/command', { command, username: 'WebUI' })
-    commandInput.value = ''
+    await postJson('/api/restart-bot')
+  } catch (error) {
+    appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+  }
+})
+
+shutdownBtn.addEventListener('click', async () => {
+  if (!confirm('Shutdown server?')) return
+  try {
+    await postJson('/api/shutdown')
   } catch (error) {
     appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
   }
@@ -207,7 +501,6 @@ commandForm.addEventListener('submit', async (event) => {
 
 settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault()
-
   try {
     const payload = readSettingsForm()
     const result = await postJson('/api/settings', payload)
@@ -219,37 +512,166 @@ settingsForm.addEventListener('submit', async (event) => {
   }
 })
 
-restartBotBtn.addEventListener('click', async () => {
-  if (!confirm('Restart the bot? The webserver will keep running.')) return
+starterAuth.addEventListener('change', () => {
+  starterTokenRow.style.display = starterAuth.value === 'token' ? 'grid' : 'none'
+})
+
+switchViewerBtn.addEventListener('click', async () => {
   try {
-    await postJson('/api/restart-bot')
-    appendLog({ ts: new Date().toISOString(), type: 'system', message: 'Bot restart initiated' })
+    await postJson('/api/viewer/target', { botId: viewerTargetBotId.value })
+    settingsNotice.style.color = '#1c7c54'
+    settingsNotice.textContent = 'Viewer switched successfully.'
+  } catch (error) {
+    settingsNotice.style.color = '#a63a50'
+    settingsNotice.textContent = error.message
+  }
+})
+
+openAddBotBtn.addEventListener('click', () => {
+  addBotModal.classList.remove('hidden')
+})
+
+closeAddBotBtn.addEventListener('click', () => {
+  addBotModal.classList.add('hidden')
+})
+
+createGroupBtn.addEventListener('click', () => {
+  openGroupForm()
+})
+
+cancelGroupBtn.addEventListener('click', () => {
+  groupForm.classList.add('hidden')
+  resetGroupForm()
+})
+
+groupForm.addEventListener('submit', async (event) => {
+  event.preventDefault()
+  const name = groupName.value.trim()
+  if (!name) return
+
+  const botIds = [...groupBotChecklist.querySelectorAll('input[type="checkbox"]:checked')].map((input) => input.value)
+
+  try {
+    if (editingGroupId) {
+      await putJson(`/api/groups/${editingGroupId}`, { name, botIds })
+    } else {
+      await postJson('/api/groups', { name, botIds })
+    }
+    groupForm.classList.add('hidden')
+    resetGroupForm()
   } catch (error) {
     appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
   }
 })
 
-shutdownBtn.addEventListener('click', async () => {
-  if (!confirm('Shutdown the entire server? This will stop both the bot and webserver.')) return
+singleBotForm.addEventListener('submit', async (event) => {
+  event.preventDefault()
+  const data = new FormData(singleBotForm)
   try {
-    await postJson('/api/shutdown')
-    appendLog({ ts: new Date().toISOString(), type: 'system', message: 'Server shutting down...' })
+    await postJson('/api/bots', {
+      username: String(data.get('username') || '').trim(),
+      auth: String(data.get('auth') || 'offline'),
+      token: String(data.get('token') || '')
+    })
+    singleBotForm.reset()
+    addBotModal.classList.add('hidden')
   } catch (error) {
     appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
   }
+})
+
+batchBotForm.addEventListener('submit', async (event) => {
+  event.preventDefault()
+  const data = new FormData(batchBotForm)
+  try {
+    await postJson('/api/bots/batch', {
+      prefix: String(data.get('prefix') || 'Bot').trim(),
+      start: Number(data.get('start')),
+      count: Number(data.get('count')),
+      auth: String(data.get('auth') || 'offline'),
+      token: String(data.get('token') || '')
+    })
+    addBotModal.classList.add('hidden')
+  } catch (error) {
+    appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+  }
+})
+
+document.querySelectorAll('[data-add-tab]').forEach((button) => {
+  button.addEventListener('click', () => {
+    const mode = button.dataset.addTab
+    document.querySelectorAll('[data-add-tab]').forEach((tab) => tab.classList.remove('active'))
+    document.querySelectorAll('.add-tab').forEach((tab) => tab.classList.remove('active'))
+    button.classList.add('active')
+    if (mode === 'single') {
+      singleBotForm.classList.add('active')
+    } else {
+      batchBotForm.classList.add('active')
+    }
+  })
+})
+
+function wireAuthSelects() {
+  document.querySelectorAll('.auth-select').forEach((select) => {
+    const row = select.closest('form').querySelector('.token-row')
+    const update = () => {
+      row.classList.toggle('hidden', select.value !== 'token')
+    }
+    select.addEventListener('change', update)
+    update()
+  })
+}
+wireAuthSelects()
+
+closeAuthModalBtn.addEventListener('click', () => {
+  authModal.classList.add('hidden')
 })
 
 socket.on('bootstrap', ({ state, settings, logs }) => {
+  dashboardState = state
   logsView.textContent = ''
   logs.forEach(appendLog)
-  setStatus(state)
+
   fillSettingsForm(settings)
+  selectedBotForDetails = dashboardState.bots.some((bot) => bot.id === selectedBotForDetails)
+    ? selectedBotForDetails
+    : (dashboardState.bots[0]?.id || 'starter')
+
+  if (!dashboardState.bots.some((bot) => bot.id === selectedTarget) && !selectedTarget.startsWith('group:')) {
+    selectedTarget = 'all'
+  }
+
+  renderAll()
 })
 
 socket.on('state', (state) => {
-  setStatus(state)
+  dashboardState = state
+
+  if (!dashboardState.bots.some((bot) => bot.id === selectedBotForDetails)) {
+    selectedBotForDetails = dashboardState.bots[0]?.id || 'starter'
+  }
+
+  if (selectedTarget !== 'all' && !selectedTarget.startsWith('group:') && !dashboardState.bots.some((bot) => bot.id === selectedTarget)) {
+    selectedTarget = 'all'
+  }
+
+  renderAll()
 })
 
 socket.on('log', (log) => {
   appendLog(log)
+})
+
+socket.on('auth_required', ({ botId, url, userCode }) => {
+  authModalText.textContent = `Bot ${botId} needs Microsoft sign-in. Visit ${url} and enter code: ${userCode}`
+  authModal.classList.remove('hidden')
+})
+
+socket.on('auth_done', ({ botId }) => {
+  if (!authModal.classList.contains('hidden')) {
+    authModalText.textContent = `Microsoft sign-in completed for ${botId}.`
+    setTimeout(() => {
+      authModal.classList.add('hidden')
+    }, 1200)
+  }
 })

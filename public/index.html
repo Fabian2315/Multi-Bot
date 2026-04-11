@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mineflayer Control Deck</title>
+  <title>Mineflayer Multi-Bot Deck</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -15,129 +15,227 @@
     <header class="topbar">
       <div>
         <p class="eyebrow">Mineflayer Dashboard</p>
-        <h1>Control Deck</h1>
+        <h1>Multi-Bot Control Deck</h1>
       </div>
       <div class="status-pill" id="statusPill">Connecting...</div>
     </header>
 
-    <nav class="tab-bar">
-      <button class="tab active" data-tab="controls">Controls</button>
-      <button class="tab" data-tab="viewer">Prismarine Viewer</button>
-      <button class="tab" data-tab="settings">Settings</button>
-      <button class="tab" data-tab="logs">Logs</button>
-    </nav>
+    <div class="main-grid">
+      <aside class="sidebar card">
+        <section class="side-section">
+          <div class="side-head">
+            <h2>Bots</h2>
+            <button id="openAddBotBtn" class="mini-btn">+ Add</button>
+          </div>
+          <div id="botList" class="list"></div>
+        </section>
 
-    <section class="tab-panel active" id="controls">
-      <div class="panel-grid">
-        <article class="card">
-          <h2>Bot Vitals</h2>
-          <p class="muted">Live survival stats from the connected bot.</p>
-          <div class="vitals-grid">
-            <div class="vital-row">
-              <div class="vital-label">Health</div>
-              <div class="meter"><div id="healthFill" class="meter-fill"></div></div>
-              <div id="healthValue" class="vital-value">-- / 20</div>
+        <section class="side-section">
+          <div class="side-head">
+            <h2>Groups</h2>
+            <button id="createGroupBtn" class="mini-btn">+ Group</button>
+          </div>
+          <div id="groupList" class="list"></div>
+          <form id="groupForm" class="group-form hidden">
+            <p id="groupFormMode" class="muted">Create Group</p>
+            <input id="groupName" type="text" placeholder="Group name">
+            <div id="groupBotChecklist" class="checklist"></div>
+            <div class="inline-actions">
+              <button type="submit" id="groupSaveBtn">Save Group</button>
+              <button type="button" id="cancelGroupBtn">Cancel</button>
             </div>
-            <div class="vital-row">
-              <div class="vital-label">Hunger</div>
-              <div class="meter"><div id="hungerFill" class="meter-fill meter-fill-hunger"></div></div>
-              <div id="hungerValue" class="vital-value">-- / 20</div>
+          </form>
+        </section>
+      </aside>
+
+      <section class="content">
+        <nav class="tab-bar">
+          <button class="tab active" data-tab="controls">Controls</button>
+          <button class="tab" data-tab="viewer">Prismarine Viewer</button>
+          <button class="tab" data-tab="settings">Settings</button>
+          <button class="tab" data-tab="logs">Logs</button>
+        </nav>
+
+        <section class="tab-panel active" id="controls">
+          <article class="card command-card">
+            <div class="target-row">
+              <label>Command Target
+                <select id="commandTarget"></select>
+              </label>
             </div>
-            <div class="vital-row coord-row">
-              <div class="vital-label">XYZ</div>
-              <div id="coordValue" class="vital-value">-- / -- / --</div>
+            <form id="commandForm" class="command-form">
+              <input id="commandInput" type="text" placeholder="Examples: goto Steve | Bot.guard.here | mine coal_ore" autocomplete="off">
+              <button type="submit">Send</button>
+            </form>
+          </article>
+
+          <div class="panel-grid">
+            <article class="card">
+              <h2>Bot Vitals</h2>
+              <p class="muted">Live stats for the selected bot.</p>
+              <div class="vitals-grid">
+                <div class="vital-row">
+                  <div class="vital-label">Health</div>
+                  <div class="meter"><div id="healthFill" class="meter-fill"></div></div>
+                  <div id="healthValue" class="vital-value">-- / 20</div>
+                </div>
+                <div class="vital-row">
+                  <div class="vital-label">Hunger</div>
+                  <div class="meter"><div id="hungerFill" class="meter-fill meter-fill-hunger"></div></div>
+                  <div id="hungerValue" class="vital-value">-- / 20</div>
+                </div>
+                <div class="vital-row coord-row">
+                  <div class="vital-label">XYZ</div>
+                  <div id="coordValue" class="vital-value">-- / -- / --</div>
+                </div>
+              </div>
+            </article>
+
+            <article class="card">
+              <h2>Inventory</h2>
+              <p class="muted">Stacks for selected bot.</p>
+              <div id="inventorySummary" class="inventory-summary">0 stacks</div>
+              <div id="inventoryEmpty" class="inventory-empty">No items in inventory.</div>
+              <ul id="inventoryList" class="inventory-list"></ul>
+            </article>
+
+            <article class="card">
+              <h2>Toggle Settings</h2>
+              <p class="muted">Applies to selected command target.</p>
+              <div class="toggle-group">
+                <button id="toggleSelfDefense" class="action-btn">Self Defense: ...</button>
+                <button id="toggleAutoEat" class="action-btn">Auto Eat: ...</button>
+                <button id="toggleSilentMode" class="action-btn">Silent Mode: ...</button>
+              </div>
+            </article>
+
+            <article class="card">
+              <h2>Quick Actions</h2>
+              <div class="quick-actions">
+                <button data-command="Bot.goto.nearest">Go to Nearest</button>
+                <button data-command="Bot.follow.stop">Stop Follow</button>
+                <button data-command="Bot.pvp.stop">Stop PvP</button>
+                <button data-command="Bot.guard.stop">Stop Guard</button>
+                <button data-command="Bot.miner.stop">Stop Miner</button>
+                <button data-command="Bot.empty">Empty Inventory</button>
+              </div>
+            </article>
+
+            <article class="card">
+              <h2>System Actions</h2>
+              <p class="muted">Manage bot processes and server.</p>
+              <div class="quick-actions">
+                <button id="restartBotBtn" class="action-btn action-btn-primary">Restart Bots</button>
+                <button id="shutdownBtn" class="action-btn action-btn-danger">Shutdown Server</button>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="viewer">
+          <article class="card viewer-card">
+            <div class="viewer-head">
+              <h2>Single Prismarine Viewer</h2>
+              <div class="viewer-controls">
+                <button id="toggleViewer" class="action-btn">Viewer: ...</button>
+                <a id="viewerLink" href="http://localhost:3008" target="_blank" rel="noreferrer">Open in new tab</a>
+              </div>
             </div>
-          </div>
-        </article>
+            <p id="viewerNotice" class="muted viewer-notice"></p>
+            <iframe id="viewerFrame" title="Prismarine Viewer" src="http://localhost:3008"></iframe>
+          </article>
+        </section>
 
-        <article class="card">
-          <h2>Inventory</h2>
-          <p class="muted">Item stacks currently in the bot inventory.</p>
-          <div id="inventorySummary" class="inventory-summary">0 stacks</div>
-          <div id="inventoryEmpty" class="inventory-empty">No items in inventory.</div>
-          <ul id="inventoryList" class="inventory-list"></ul>
-        </article>
+        <section class="tab-panel" id="settings">
+          <article class="card settings-card">
+            <h2>Server + Starter Bot Settings</h2>
+            <p class="muted">Saved to disk. Restart bots to apply connection/auth changes.</p>
+            <form id="settingsForm" class="settings-form">
+              <label>Server Host<input name="host" required></label>
+              <label>Server Port<input name="port" type="number" required></label>
+              <label>MC Version<input name="version" required></label>
+              <label>Viewer Port<input name="viewerPort" type="number" required></label>
+              <label>Web Port<input name="webPort" type="number" required></label>
+              <label>Starter Username<input name="starterUsername" required></label>
+              <label>Starter Auth
+                <select name="starterAuth" id="starterAuth">
+                  <option value="offline">offline</option>
+                  <option value="microsoft">microsoft</option>
+                  <option value="token">token</option>
+                </select>
+              </label>
+              <label id="starterTokenRow">Starter Token<input name="starterToken" id="starterToken"></label>
+              <label>Viewer Bot
+                <select name="viewerTargetBotId" id="viewerTargetBotId"></select>
+              </label>
+              <div class="inline-actions wide">
+                <button type="submit">Save Settings</button>
+                <button type="button" id="switchViewerBtn">Switch Viewer Now</button>
+              </div>
+            </form>
+            <p id="settingsNotice" class="notice"></p>
+          </article>
+        </section>
 
-        <article class="card">
-          <h2>Toggle Settings</h2>
-          <p class="muted">One-click toggles for all runtime bot settings.</p>
-          <div class="toggle-group">
-            <button id="toggleSelfDefense" class="action-btn">Self Defense: ...</button>
-            <button id="toggleAutoEat" class="action-btn">Auto Eat: ...</button>
-            <button id="toggleSilentMode" class="action-btn">Silent Mode: ...</button>
-          </div>
-        </article>
+        <section class="tab-panel" id="logs">
+          <article class="card logs-card">
+            <h2>Live Event Stream</h2>
+            <pre id="logsView"></pre>
+          </article>
+        </section>
+      </section>
+    </div>
+  </main>
 
-        <article class="card">
-          <h2>Quick Actions</h2>
-          <div class="quick-actions">
-            <button data-command="Bot.goto.nearest">Go to Nearest</button>
-            <button data-command="Bot.follow.stop">Stop Follow</button>
-            <button data-command="Bot.pvp.stop">Stop PvP</button>
-            <button data-command="Bot.guard.stop">Stop Guard</button>
-            <button data-command="Bot.miner.stop">Stop Miner</button>
-            <button data-command="Bot.empty">Empty Inventory</button>
-          </div>
-        </article>
-
-        <article class="card">
-          <h2>System Actions</h2>
-          <p class="muted">Manage the bot and webserver.</p>
-          <div class="quick-actions">
-            <button id="restartBotBtn" class="action-btn action-btn-primary">Restart Bot Only</button>
-            <button id="shutdownBtn" class="action-btn action-btn-danger">Shutdown Server</button>
-          </div>
-        </article>
+  <div id="addBotModal" class="modal hidden">
+    <div class="modal-card card">
+      <div class="side-head">
+        <h2>Add Bots</h2>
+        <button id="closeAddBotBtn" class="mini-btn">Close</button>
+      </div>
+      <div class="tab-bar small">
+        <button class="tab small active" data-add-tab="single">Single</button>
+        <button class="tab small" data-add-tab="batch">Batch</button>
       </div>
 
-      <article class="card command-card">
-        <h2>Command Line</h2>
-        <p class="muted">Send any bot instruction. Prefix with Bot. or just type the command body.</p>
-        <form id="commandForm" class="command-form">
-          <input id="commandInput" type="text" placeholder="Examples: goto Steve | Bot.guard.here | mine coal_ore" autocomplete="off">
-          <button type="submit">Send</button>
-        </form>
-      </article>
-    </section>
+      <form id="singleBotForm" class="add-tab active">
+        <label>Username<input name="username" required></label>
+        <label>Auth
+          <select name="auth" class="auth-select">
+            <option value="offline">offline</option>
+            <option value="microsoft">microsoft</option>
+            <option value="token">token</option>
+          </select>
+        </label>
+        <label class="token-row hidden">Token<input name="token"></label>
+        <button type="submit">Add Bot</button>
+      </form>
 
-    <section class="tab-panel" id="viewer">
-      <article class="card viewer-card">
-        <div class="viewer-head">
-          <h2>Integrated Prismarine Viewer</h2>
-          <div class="viewer-controls">
-            <button id="toggleViewer" class="action-btn">Viewer: ...</button>
-            <a id="viewerLink" href="http://localhost:3008" target="_blank" rel="noreferrer">Open in new tab</a>
-          </div>
-        </div>
-        <p id="viewerNotice" class="muted viewer-notice"></p>
-        <iframe id="viewerFrame" title="Prismarine Viewer" src="http://localhost:3008"></iframe>
-      </article>
-    </section>
+      <form id="batchBotForm" class="add-tab">
+        <label>Prefix<input name="prefix" value="Bot" required></label>
+        <label>Start<input name="start" type="number" value="1" required></label>
+        <label>Count<input name="count" type="number" value="3" min="1" max="50" required></label>
+        <label>Auth
+          <select name="auth" class="auth-select">
+            <option value="offline">offline</option>
+            <option value="microsoft">microsoft</option>
+            <option value="token">token</option>
+          </select>
+        </label>
+        <label class="token-row hidden">Token<input name="token"></label>
+        <button type="submit">Add Batch</button>
+      </form>
+    </div>
+  </div>
 
-    <section class="tab-panel" id="settings">
-      <article class="card settings-card">
-        <h2>Bot Connection Settings</h2>
-        <p class="muted">Changes are saved to disk and used on next process start.</p>
-        <form id="settingsForm" class="settings-form">
-          <label>Server Host<input name="host" required></label>
-          <label>Server Port<input name="port" type="number" required></label>
-          <label>Bot Username<input name="username" required></label>
-          <label>Minecraft Version<input name="version" required></label>
-          <label>Viewer Port<input name="viewerPort" type="number" required></label>
-          <label>Web Port<input name="webPort" type="number" required></label>
-          <button type="submit">Save Settings</button>
-        </form>
-        <p id="settingsNotice" class="notice"></p>
-      </article>
-    </section>
-
-    <section class="tab-panel" id="logs">
-      <article class="card logs-card">
-        <h2>Live Event Stream</h2>
-        <pre id="logsView"></pre>
-      </article>
-    </section>
-  </main>
+  <div id="authModal" class="modal hidden">
+    <div class="modal-card card">
+      <h2>Microsoft Sign-In Required</h2>
+      <p id="authModalText" class="muted"></p>
+      <p class="muted">Complete login in the browser, this dialog closes automatically.</p>
+      <button id="closeAuthModalBtn">Close</button>
+    </div>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>

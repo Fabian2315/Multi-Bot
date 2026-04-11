@@ -1,165 +1,173 @@
 # MCBotAssistant
 
-A customizable Minecraft bot built with Mineflayer and plugins for navigation, PvP, block collection, auto-eating, armor management, and inventory handling.
+A Mineflayer-based Minecraft bot controller with a local web dashboard, now supporting multiple bots, command targeting, groups, and a single switchable Prismarine viewer.
 
 ## Important
 
-This project is vibecoded in large parts (including this readme), due to me being a bad dev and honestly I dont have any idea what I'm really doing. Also this code is kinda messy. Im currently a student and dont have to much motivation on hand to learn coding in my free time, so dont expect any changes in how I handle this project.
+This project is largely vibecoded (including this readme), because im a bad dev and to be honest as a student dont want to spend my free time learning how to code. Please expect some type of unexpected behavieour and bugs.
 
 ## Chat Notice
 
-For the bot to respond in the in game chat, you need to go into the server.properties file and and change enforce-secure-profile to false. 
+If you want bots to react to in-game chat commands, make sure your server allows unsigned chat as needed for your setup.
+
+For many offline/local setups, this means setting the following in server.properties:
+
+enforce-secure-profile=false
 
 ## Project Overview
 
-This project runs a local Minecraft bot (`Bot`) that listens to in-game chat commands and exposes a local web dashboard for monitoring and control.
-You can use commands to move, follow players, fight, guard an area, mine resources, collect blocks, eat automatically, manage armor, and empty inventory into nearby chests.
+The app starts one starter bot and hosts a local dashboard. From the dashboard you can:
+
+- Add more bots (single or batch naming)
+- Control one bot, all bots, or a group
+- Create and edit groups for easier command targeting
+- Configure starter auth mode (offline, microsoft, token)
+- Switch the single Prismarine viewer to any bot
 
 ## Features
 
-- Player navigation (`come`, `goto`, `follow`, `goto.nearest`)
-- Combat (`attack`, guard mode)
-- Self-defense retaliation (toggleable, ignores players)
-- Automatic armor management via `mineflayer-armor-manager`
-- Resource collection (`collect`, `mine`)
-- Survival utility (`autoEat`, manual eat)
-- Inventory utility (`empty` into nearest chest)
-- Built-in 3D web viewer via `prismarine-viewer`
-- **Web dashboard** at `http://localhost:<webPort>` with:
-  - Live bot status and toggle controls (self-defense, auto-eat)
-  - Real-time log stream via Socket.io
-  - Send commands from the browser
-  - View and save bot settings (host, port, username, version, viewer port, web port)
-  - Restart or shut down the bot process remotely
+- Multi-bot runtime manager
+- Per-target command execution:
+  - Single bot
+  - All bots
+  - Group
+- Group management (create, edit, delete)
+- Bot automation capabilities:
+  - Movement and following
+  - PvP and guard mode
+  - Self-defense retaliation
+  - Block collection and mining loop
+  - Auto-eat and manual eat
+  - Inventory emptying to nearest chest
+- Single Prismarine viewer instance, switchable target bot
+- Web dashboard with live state/logs over Socket.IO
+- Settings persistence in bot-settings.json
 
-## Bot Configuration
+## Quick Start
 
-Settings are stored in `bot-settings.json` and loaded on startup. You can edit the file directly or use the web dashboard settings panel.
+1. Install dependencies:
 
-| Setting | Default | Description |
-|---|---|---|
-| `host` | `localhost` | Minecraft server host |
-| `port` | `25565` | Minecraft server port |
-| `username` | `Bot` | Bot's in-game username |
-| `version` | `1.21.11` | Minecraft version |
-| `viewerPort` | `3008` | Port for the 3D prismarine viewer |
-| `webPort` | `3000` | Port for the web dashboard |
+npm install
+
+2. Start the app:
+
+npm start
+
+3. Open dashboard:
+
+http://localhost:3000
 
 ## Requirements
 
 - Node.js (LTS recommended)
-- A running Minecraft server in offline mode (default: `localhost:25565`)
+- A reachable Minecraft server
 
-## Chat Command Reference
+## Configuration
 
-Use these commands in Minecraft chat:
+Settings are stored in bot-settings.json.
 
-- `Bot.test`
-  - What it does: Sends a test success response.
-  - Syntax: `Bot.test`
+Current schema:
 
-- `Bot.come`
-  - What it does: Bot walks to the player who sent the command.
-  - Syntax: `Bot.come`
+| Setting | Description |
+|---|---|
+| host | Minecraft server host |
+| port | Minecraft server port |
+| version | Minecraft version |
+| viewerPort | Prismarine viewer HTTP port |
+| webPort | Dashboard port |
+| starterUsername | Starter bot username |
+| starterAuth | Starter auth mode: offline, microsoft, token |
+| starterToken | Token used when starterAuth is token |
+| viewerTargetBotId | Which bot currently owns the single viewer |
+| bots | Persisted extra bots: id, username, auth, token |
+| groups | Persisted groups: id, name, botIds |
 
-- `Bot.goto <player>`
-  - What it does: Bot goes to the named player.
-  - Syntax: `Bot.goto Steve`
+## Dashboard Usage
 
-- `Bot.goto <x> <y> <z>`
-  - What it does: Bot goes to specific coordinates.
-  - Syntax: `Bot.goto 100 64 -20`
+### Add Bots
 
-- `Bot.goto.nearest`
-  - What it does: Bot goes to the nearest player.
-  - Syntax: `Bot.goto.nearest`
+- Use the Bots panel + Add button.
+- Single mode: create one bot with custom username/auth.
+- Batch mode: create numbered bots using prefix/start/count.
 
-- `Bot.follow <player>`
-  - What it does: Bot continuously follows a player.
-  - Syntax: `Bot.follow Steve`
+### Command Targeting
 
-- `Bot.follow.stop`
-  - What it does: Stops following.
-  - Syntax: `Bot.follow.stop`
+- Choose target from the command target dropdown:
+  - All Bots
+  - Specific bot
+  - Group
+- Quick action buttons and manual command input use this target.
 
-- `Bot.attack <player>`
-  - What it does: Equips best sword, follows target, and attacks.
-  - Syntax: `Bot.attack Steve`
+### Group Management
 
-- `Bot.pvp.stop`
-  - What it does: Stops current PvP actions.
-  - Syntax: `Bot.pvp.stop`
+- Create group from the Groups panel.
+- Edit group to rename or change members.
+- Delete group when no longer needed.
 
-- `Bot.selfdefense`
-  - What it does: Toggles self-defense mode on/off.
-  - Syntax: `Bot.selfdefense`
+### Viewer Targeting
 
-- `Bot.selfdefense.on`
-  - What it does: Enables self-defense mode.
-  - Syntax: `Bot.selfdefense.on`
+- Viewer is single-instance only.
+- In Settings, choose Viewer Bot and switch viewer immediately.
 
-- `Bot.selfdefense.off`
-  - What it does: Disables self-defense mode.
-  - Syntax: `Bot.selfdefense.off`
+## Auth Modes
 
-- `Bot.selfdefense.status`
-  - What it does: Shows whether self-defense is enabled.
-  - Syntax: `Bot.selfdefense.status`
+Supported bot auth modes:
 
-- `Bot.silent`
-  - What it does: Toggles global silent mode for outgoing in-game bot chat messages.
-  - Syntax: `Bot.silent`
+- offline
+- microsoft (device flow; code prompt appears in dashboard modal)
+- token
 
-- `Bot.silent.on`
-  - What it does: Enables global silent mode (outgoing bot chat is blocked in Minecraft chat, still logged to console).
-  - Syntax: `Bot.silent.on`
+## Command Reference
 
-- `Bot.silent.off`
-  - What it does: Disables global silent mode.
-  - Syntax: `Bot.silent.off`
+Commands must start with Bot. to be interpreted as commands.
 
-- `Bot.silent.status`
-  - What it does: Prints current silent mode status to the console and web logs.
-  - Syntax: `Bot.silent.status`
+- Bot.test
+- Bot.come
+- Bot.goto <player>
+- Bot.goto <x> <y> <z>
+- Bot.goto.nearest
+- Bot.follow <player>
+- Bot.follow.stop
+- Bot.attack <player>
+- Bot.pvp.stop
+- Bot.guard <x> <y> <z>
+- Bot.guard.here
+- Bot.guard.stop
+- Bot.selfdefense
+- Bot.selfdefense.on
+- Bot.selfdefense.off
+- Bot.selfdefense.status
+- Bot.silent
+- Bot.silent.on
+- Bot.silent.off
+- Bot.silent.status
+- Bot.collect <blockType> <count>
+- Bot.mine <blockType>
+- Bot.miner.stop
+- Bot.autoEat
+- Bot.autoEat.stop
+- Bot.eat
+- Bot.empty
 
-- `Bot.guard.here`
-  - What it does: Guards the current position of the command sender.
-  - Syntax: `Bot.guard.here`
+## API Summary
 
-- `Bot.guard <x> <y> <z>`
-  - What it does: Guards a specific coordinate area and attacks nearby valid entities.
-  - Syntax: `Bot.guard 100 64 -20`
+Primary routes:
 
-- `Bot.guard.stop`
-  - What it does: Stops guard mode.
-  - Syntax: `Bot.guard.stop`
-
-- `Bot.collect <blockType> <number>`
-  - What it does: Collects a specific block type repeatedly, equipping the correct tool first.
-  - Syntax: `Bot.collect oak_log 5`
-
-- `Bot.mine <blockType>`
-  - What it does: Starts a continuous mining loop for the given block type. Pauses during self-defense.
-  - Syntax: `Bot.mine coal_ore`
-
-- `Bot.miner.stop`
-  - What it does: Stops the mining loop.
-  - Syntax: `Bot.miner.stop`
-
-- `Bot.autoEat`
-  - What it does: Enables automatic eating.
-  - Syntax: `Bot.autoEat`
-
-- `Bot.autoEat.stop`
-  - What it does: Disables automatic eating.
-  - Syntax: `Bot.autoEat.stop`
-
-- `Bot.eat`
-  - What it does: Makes the bot try to eat immediately.
-  - Syntax: `Bot.eat`
-
-- `Bot.empty`
-  - What it does: Empties inventory into the nearest chest within 50 blocks.
-  - Syntax: `Bot.empty`
+- GET /api/status
+- GET /api/settings
+- POST /api/settings
+- GET /api/bots
+- POST /api/bots
+- POST /api/bots/batch
+- DELETE /api/bots/:botId
+- GET /api/groups
+- POST /api/groups
+- PUT /api/groups/:groupId
+- DELETE /api/groups/:groupId
+- POST /api/command
+- POST /api/toggle/:name
+- POST /api/viewer/target
+- POST /api/restart-bot
+- POST /api/shutdown
 
 
