@@ -38,6 +38,7 @@ The app starts one starter bot and hosts a local dashboard. From the dashboard y
   - PvP and guard mode
   - Self-defense retaliation
   - Block collection and mining loop
+  - Craft planning and table-assisted crafting
   - Auto-eat and manual eat
   - Inventory emptying to nearest chest
 - Single Prismarine viewer instance, switchable target bot
@@ -80,6 +81,7 @@ Current schema:
 | starterAuth | Starter auth mode: offline, Microslop, token |
 | starterToken | Token used when starterAuth is token |
 | viewerTargetBotId | Which bot currently owns the single viewer |
+| commandSettings.craftSearchRadius | Maximum distance to search for a crafting table |
 | bots | Persisted extra bots: id, username, auth, token |
 | groups | Persisted groups: id, name, botIds |
 
@@ -143,12 +145,20 @@ Commands must start with Bot. to be interpreted as commands.
 - Bot.silent.off
 - Bot.silent.status
 - Bot.collect <blockType> <count>
+- Bot.craft <itemId> [count]
 - Bot.mine <blockType>
 - Bot.miner.stop
 - Bot.autoEat
 - Bot.autoEat.stop
 - Bot.eat
 - Bot.empty
+
+## Crafting Notes
+
+- Crafting uses Minecraft item ids such as `oak_planks`, `stick`, or `wooden_pickaxe`.
+- The bot resolves recipes from `minecraft-data` instead of a large handwritten recipe file.
+- For crafting-table recipes, the bot first checks inventory materials, then searches for a nearby crafting table, walks to it, and crafts the item.
+- Queue wait-for-completion supports both `Bot.goto` variants and `Bot.craft`.
 
 ## API Summary
 

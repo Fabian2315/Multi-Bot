@@ -6,6 +6,9 @@ const groupList = document.getElementById('groupList')
 const commandTarget = document.getElementById('commandTarget')
 const commandForm = document.getElementById('commandForm')
 const commandInput = document.getElementById('commandInput')
+const craftForm = document.getElementById('craftForm')
+const craftItemInput = document.getElementById('craftItemInput')
+const craftCountInput = document.getElementById('craftCountInput')
 const toggleSelfDefense = document.getElementById('toggleSelfDefense')
 const toggleAutoEat = document.getElementById('toggleAutoEat')
 const toggleSilentMode = document.getElementById('toggleSilentMode')
@@ -442,7 +445,7 @@ function queueIsCommandWaitable(command) {
   const text = String(command || '').trim()
   if (!text) return false
   const normalized = text.startsWith('Bot.') ? text : `Bot.${text}`
-  return normalized.startsWith('Bot.goto ') || normalized === 'Bot.goto.nearest'
+  return normalized.startsWith('Bot.goto ') || normalized === 'Bot.goto.nearest' || normalized.startsWith('Bot.craft ')
 }
 
 function renderQueueControls() {
@@ -457,7 +460,7 @@ function renderQueueControls() {
   queueWaitCompletionInput.disabled = !canWait
   if (!canWait) {
     queueWaitCompletionInput.checked = false
-    queueWaitCompletionRow.title = 'Wait for completion is only available for Bot.goto variants'
+    queueWaitCompletionRow.title = 'Wait for completion is only available for Bot.goto variants and Bot.craft'
   } else {
     queueWaitCompletionRow.title = ''
   }
@@ -590,6 +593,7 @@ function readSettingsForm() {
 
   const commandSettings = {
     rangeGoal: Number(data.get('rangeGoal')),
+    craftSearchRadius: Number(data.get('craftSearchRadius')),
     emptyInventoryRadius: Number(data.get('emptyInventoryRadius')),
     collectRadius: Number(data.get('collectRadius')),
     mineSearchRadius: Number(data.get('mineSearchRadius')),
@@ -627,6 +631,7 @@ function fillSettingsForm(settings) {
 
   const commandSettings = settings.commandSettings || {}
   settingsForm.rangeGoal.value = commandSettings.rangeGoal ?? 1
+  settingsForm.craftSearchRadius.value = commandSettings.craftSearchRadius ?? 32
   settingsForm.emptyInventoryRadius.value = commandSettings.emptyInventoryRadius ?? 50
   settingsForm.collectRadius.value = commandSettings.collectRadius ?? 64
   settingsForm.mineSearchRadius.value = commandSettings.mineSearchRadius ?? 64
@@ -684,6 +689,21 @@ commandForm.addEventListener('submit', async (event) => {
   try {
     await postJson('/api/command', { command, username: 'WebUI', target: selectedTarget })
     commandInput.value = ''
+  } catch (error) {
+    appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+  }
+})
+
+craftForm.addEventListener('submit', async (event) => {
+  event.preventDefault()
+  const itemId = craftItemInput.value.trim()
+  const count = Math.max(1, Number(craftCountInput.value) || 1)
+  if (!itemId) return
+
+  try {
+    await postJson('/api/command', { command: `Bot.craft ${itemId} ${count}`, username: 'WebUI', target: selectedTarget })
+    craftItemInput.value = ''
+    craftCountInput.value = '1'
   } catch (error) {
     appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
   }

@@ -66,12 +66,24 @@
               </label>
             </div>
             <form id="commandForm" class="command-form">
-              <input id="commandInput" type="text" placeholder="Examples: goto Steve | Bot.guard.here | mine coal_ore" autocomplete="off">
+              <input id="commandInput" type="text" placeholder="Examples: goto Steve | Bot.guard.here | craft wooden_pickaxe 1" autocomplete="off">
               <button type="submit">Send</button>
             </form>
           </article>
 
           <div class="panel-grid">
+            <article class="card">
+              <h2>Craft Item</h2>
+              <p class="muted">Uses Minecraft item ids. The bot checks materials first, then finds a nearby crafting table if the recipe needs one.</p>
+              <form id="craftForm" class="settings-form">
+                <label>Item ID<input id="craftItemInput" type="text" placeholder="wooden_pickaxe" autocomplete="off"></label>
+                <label>Count<input id="craftCountInput" type="number" min="1" step="1" value="1"></label>
+                <div class="inline-actions wide">
+                  <button type="submit">Craft</button>
+                </div>
+              </form>
+            </article>
+
             <article class="card">
               <h2>Bot Vitals</h2>
               <p class="muted">Live stats for the selected bot.</p>
@@ -143,7 +155,7 @@
           <div class="panel-grid queue-grid">
             <article class="card">
               <h2>Add Queue Step</h2>
-              <p class="muted">Build staged actions for the selected target. Wait-for-completion works with Bot.goto commands.</p>
+              <p class="muted">Build staged actions for the selected target. Wait-for-completion works with Bot.goto commands and Bot.craft.</p>
               <form id="queueStepForm" class="settings-form queue-step-form">
                 <label>Step Type
                   <select id="queueStepType">
@@ -263,6 +275,13 @@
               </section>
 
               <section class="command-group">
+                <h3>Crafting</h3>
+                <ul class="command-list">
+                  <li><code>Bot.craft &lt;itemId&gt; [count]</code><span>Check inventory, find a nearby crafting table when required, and craft the requested item.</span></li>
+                </ul>
+              </section>
+
+              <section class="command-group">
                 <h3>Mining + Resources</h3>
                 <ul class="command-list">
                   <li><code>Bot.collect &lt;blockType&gt; &lt;count&gt;</code><span>Collect a block type a fixed number of times.</span></li>
@@ -315,6 +334,7 @@
                 <summary>Command Range Settings</summary>
                 <div class="settings-dropdown-body">
                   <label>Goal Range (<code>goto/follow/attack/come</code>)<input name="rangeGoal" type="number" min="0" step="1" required></label>
+                  <label>Craft Search Radius (<code>Bot.craft</code>)<input name="craftSearchRadius" type="number" min="1" step="1" required></label>
                   <label>Empty Chest Search Radius (<code>Bot.empty</code>)<input name="emptyInventoryRadius" type="number" min="1" step="1" required></label>
                   <label>Collect Search Radius (<code>Bot.collect</code>)<input name="collectRadius" type="number" min="1" step="1" required></label>
                   <label>Mine Search Radius (<code>Bot.mine</code>)<input name="mineSearchRadius" type="number" min="1" step="1" required></label>

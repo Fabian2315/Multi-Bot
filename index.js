@@ -16,12 +16,14 @@ const collectBlock = require('mineflayer-collectblock').plugin
 const autoEat = require('mineflayer-auto-eat').loader
 const armorManager = require('mineflayer-armor-manager')
 const nbt = require('prismarine-nbt')
+const recipeRegistry = require('./data/recipe-registry')
 
 const SETTINGS_FILE = path.join(__dirname, 'bot-settings.json')
 const STARTER_BOT_ID = 'starter'
 
 const DEFAULT_COMMAND_SETTINGS = {
   rangeGoal: 1,
+  craftSearchRadius: 32,
   emptyInventoryRadius: 50,
   collectRadius: 64,
   mineSearchRadius: 64,
@@ -82,6 +84,7 @@ function normalizeCommandSettings(settings) {
   const input = settings || {}
   return {
     rangeGoal: normalizeNumber(input.rangeGoal, DEFAULT_COMMAND_SETTINGS.rangeGoal, { min: 0, integer: true }),
+    craftSearchRadius: normalizeNumber(input.craftSearchRadius, DEFAULT_COMMAND_SETTINGS.craftSearchRadius, { min: 1, integer: true }),
     emptyInventoryRadius: normalizeNumber(input.emptyInventoryRadius, DEFAULT_COMMAND_SETTINGS.emptyInventoryRadius, { min: 1, integer: true }),
     collectRadius: normalizeNumber(input.collectRadius, DEFAULT_COMMAND_SETTINGS.collectRadius, { min: 1, integer: true }),
     mineSearchRadius: normalizeNumber(input.mineSearchRadius, DEFAULT_COMMAND_SETTINGS.mineSearchRadius, { min: 1, integer: true }),
@@ -297,7 +300,7 @@ function makeQueueStepId() {
 function isWaitableQueueCommand(command) {
   const normalized = normalizeCommand(command)
   if (!normalized) return false
-  return normalized.startsWith('Bot.goto ') || normalized === 'Bot.goto.nearest'
+  return normalized.startsWith('Bot.goto ') || normalized === 'Bot.goto.nearest' || normalized.startsWith('Bot.craft ')
 }
 
 function normalizeQueueStep(stepInput) {
@@ -316,7 +319,7 @@ function normalizeQueueStep(stepInput) {
 
     const waitForCompletion = Boolean(step.waitForCompletion)
     if (waitForCompletion && !isWaitableQueueCommand(command)) {
-      throw new Error('This command cannot wait for completion. Only Bot.goto variants are supported.')
+      throw new Error('This command cannot wait for completion. Only Bot.goto variants and Bot.craft are supported.')
     }
 
     return { id, type: 'command', command, waitForCompletion }
@@ -882,6 +885,467 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
+  function formatItemName(name) {
+    return String(name || 'unknown_item').replace(/_/g, ' ')
+  }
+
+  function getItemDataById(itemType) {
+    if (!mcData) return null
+    return mcData.items[itemType] || null
+  }
+
+  function getItemLabel(itemType, metadata = null) {
+    const itemData = getItemDataById(itemType)
+    if (itemData?.displayName) return itemData.displayName
+    if (itemData?.name) return formatItemName(itemData.name)
+    if (typeof metadata === 'number') return `item ${itemType}:${metadata}`
+    return `item ${itemType}`
+  }
+
+  function countInventoryItem(itemType, metadata = null) {
+    return bot.inventory.items().reduce((total, item) => {
+      if (item.type !== itemType) return total
+      if (metadata != null && item.metadata !== metadata) return total
+      return total + item.count
+    }, 0)
+  }
+
+  function buildRecipeIngredientPlan(recipe, craftCount) {
+    const requiredByKey = new Map()
+
+    for (const delta of recipe.delta || []) {
+      if (!delta || delta.count >= 0) continue
+
+      const metadata = delta.metadata == null ? null : delta.metadata
+      const key = `${delta.id}:${metadata == null ? '*' : metadata}`
+      const requiredCount = Math.abs(delta.count) * craftCount
+      const existing = requiredByKey.get(key)
+
+      if (existing) {
+        existing.required += requiredCount
+      } else {
+        requiredByKey.set(key, {
+          itemType: delta.id,
+          metadata,
+          required: requiredCount
+        })
+      }
+    }
+
+    return Array.from(requiredByKey.values()).map((entry) => {
+      const available = countInventoryItem(entry.itemType, entry.metadata)
+      const missing = Math.max(0, entry.required - available)
+
+      return {
+        ...entry,
+        available,
+        missing,
+        label: getItemLabel(entry.itemType, entry.metadata)
+      }
+    })
+  }
+
+  function buildRecipePlan({ recipe, itemData, requestedCount }) {
+    const resultPerCraft = Math.max(1, recipe.result?.count || 1)
+    const craftCount = Math.max(1, Math.ceil(requestedCount / resultPerCraft))
+    const ingredients = buildRecipeIngredientPlan(recipe, craftCount)
+    const missing = ingredients.filter((ingredient) => ingredient.missing > 0)
+    const missingTotal = missing.reduce((total, ingredient) => total + ingredient.missing, 0)
+
+    return {
+      recipe,
+      craftCount,
+      requestedCount,
+      producedCount: craftCount * resultPerCraft,
+      resultPerCraft,
+      ingredients,
+      missing,
+      missingTotal,
+      requiresTable: Boolean(recipe.requiresTable),
+      station: recipe.requiresTable ? 'crafting_table' : 'inventory',
+      resultLabel: itemData.displayName || formatItemName(itemData.name)
+    }
+  }
+
+  function chooseRecipePlan(recipePlans) {
+    if (!recipePlans.length) return null
+
+    return recipePlans.slice().sort((left, right) => {
+      if (left.missingTotal === 0 && right.missingTotal > 0) return -1
+      if (right.missingTotal === 0 && left.missingTotal > 0) return 1
+      if (left.missingTotal !== right.missingTotal) return left.missingTotal - right.missingTotal
+      if (left.requiresTable !== right.requiresTable) return left.requiresTable ? 1 : -1
+      if (left.craftCount !== right.craftCount) return left.craftCount - right.craftCount
+      return left.ingredients.length - right.ingredients.length
+    })[0]
+  }
+
+  function formatIngredientProgress(ingredient) {
+    return `${ingredient.label} ${ingredient.available}/${ingredient.required}`
+  }
+
+  function formatMissingIngredients(missing) {
+    if (!missing.length) return 'none'
+    return missing
+      .map((ingredient) => `${ingredient.label} ${ingredient.available}/${ingredient.required}`)
+      .join(', ')
+  }
+
+  function resolveCraftTarget(rawName) {
+    if (!mcData) throw new Error('Bot is not ready to craft yet')
+
+    const normalizedName = recipeRegistry.resolveCraftItemName(rawName)
+    if (!normalizedName) {
+      throw new Error('Usage: Bot.craft <itemId> [count]')
+    }
+
+    if (recipeRegistry.BLOCKED_ITEM_IDS.has(normalizedName)) {
+      throw new Error(`Crafting for ${normalizedName} is disabled in the local recipe registry`)
+    }
+
+    const itemData = mcData.itemsByName[normalizedName]
+    if (!itemData) {
+      throw new Error(`Unknown item id: ${normalizedName}`)
+    }
+
+    return {
+      normalizedName,
+      itemData,
+      label: itemData.displayName || formatItemName(itemData.name)
+    }
+  }
+
+  function planCraft(itemName, requestedCount) {
+    const target = resolveCraftTarget(itemName)
+    if (typeof bot.recipesAll !== 'function') {
+      throw new Error('This Mineflayer build does not expose recipe lookup')
+    }
+
+    const recipes = bot.recipesAll(target.itemData.id, null, true)
+    if (!recipes.length) {
+      throw new Error(`No crafting recipe found for ${target.normalizedName}`)
+    }
+
+    const plans = recipes.map((recipe) => buildRecipePlan({
+      recipe,
+      itemData: target.itemData,
+      requestedCount
+    }))
+
+    const selected = chooseRecipePlan(plans)
+    if (!selected) {
+      throw new Error(`No usable crafting recipe found for ${target.normalizedName}`)
+    }
+
+    return {
+      ...target,
+      ...selected,
+      allPlans: plans
+    }
+  }
+
+  async function moveNearBlock(block, range = 1, timeoutMs = 30000) {
+    if (!block?.position) throw new Error('Target block is missing a position')
+
+    bot.pathfinder.setMovements(defaultMove)
+    bot.pathfinder.setGoal(new GoalNear(block.position.x, block.position.y, block.position.z, range))
+
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup()
+        reject(new Error(`Timeout reaching ${block.name || 'target block'}`))
+      }, timeoutMs)
+
+      const onReached = () => {
+        cleanup()
+        resolve()
+      }
+
+      function cleanup() {
+        clearTimeout(timeout)
+        bot.removeListener('goal_reached', onReached)
+      }
+
+      bot.on('goal_reached', onReached)
+    })
+  }
+
+  function findNearbyCraftingTable() {
+    return bot.findBlock({
+      matching: (block) => block && block.name === 'crafting_table',
+      maxDistance: getCommandSettings().craftSearchRadius
+    })
+  }
+
+  async function handleCraftCommand(itemName, requestedCount) {
+    if (!bot.player || !bot.entity) {
+      throw new Error('Bot must be connected before it can craft')
+    }
+
+    const plan = planCraft(itemName, requestedCount)
+
+    if (plan.missing.length) {
+      throw new Error(`Missing materials for ${plan.label}: ${formatMissingIngredients(plan.missing)}`)
+    }
+
+    let craftingTableBlock = null
+    if (plan.requiresTable) {
+      craftingTableBlock = findNearbyCraftingTable()
+      if (!craftingTableBlock) {
+        throw new Error(`No crafting table found within ${getCommandSettings().craftSearchRadius} blocks`)
+      }
+
+      await moveNearBlock(craftingTableBlock, 1)
+    }
+
+    const beforeCount = countInventoryItem(plan.itemData.id, plan.recipe.result?.metadata == null ? null : plan.recipe.result.metadata)
+    await bot.craft(plan.recipe, plan.craftCount, craftingTableBlock)
+    const afterCount = countInventoryItem(plan.itemData.id, plan.recipe.result?.metadata == null ? null : plan.recipe.result.metadata)
+    const craftedCount = Math.max(plan.producedCount, afterCount - beforeCount)
+    const stationLabel = plan.requiresTable ? 'crafting table' : 'inventory crafting'
+
+    say(`SUCCESS: Crafted ${craftedCount} ${plan.label} using ${stationLabel}`)
+  }
+
+  async function executeCommand(usernameFromChat, input) {
+    const message = normalizeCommand(input)
+    const commandSettings = getCommandSettings()
+
+    try {
+      switch (true) {
+        case message === 'Bot.test':
+          say('TEST: success')
+          break
+        case message === 'Bot.come': {
+          const target = bot.players[usernameFromChat]?.entity
+          if (!target) {
+            say(`ERROR: I cannot see ${usernameFromChat}`)
+            break
+          }
+          bot.pathfinder.setMovements(defaultMove)
+          setTrackedGoal(new GoalNear(target.position.x, target.position.y, target.position.z, commandSettings.rangeGoal))
+          say(`Coming to ${usernameFromChat}`)
+          break
+        }
+        case message.startsWith('Bot.goto '): {
+          const args = message.slice(9).trim().split(' ').filter(Boolean)
+
+          if (args.length === 1) {
+            const target = bot.players[args[0]]?.entity
+            if (!target) {
+              say(`ERROR: I cannot see ${args[0]}`)
+              break
+            }
+            bot.pathfinder.setMovements(defaultMove)
+            setTrackedGoal(new GoalFollow(target, commandSettings.rangeGoal), true, {
+              type: 'follow',
+              entity: target,
+              username: args[0],
+              range: commandSettings.rangeGoal
+            })
+            say(`Going to ${args[0]}`)
+            break
+          }
+
+          if (args.length === 3) {
+            const [x, y, z] = args.map(Number)
+            if ([x, y, z].some(Number.isNaN)) {
+              say('ERROR: usage Bot.goto <player> or Bot.goto <x> <y> <z>')
+              break
+            }
+            bot.pathfinder.setMovements(defaultMove)
+            setTrackedGoal(new GoalNear(x, y, z, commandSettings.rangeGoal), false)
+            say(`Going to position ${x} ${y} ${z}`)
+            break
+          }
+
+          say('ERROR: usage Bot.goto <player> or Bot.goto <x> <y> <z>')
+          break
+        }
+        case message === 'Bot.goto.nearest': {
+          const nearest = bot.nearestEntity((entity) => {
+            if (!entity) return false
+            if (entity.type !== 'player') return false
+            if (entity.username === bot.username) return false
+            return true
+          })
+
+          if (!nearest) {
+            say('ERROR: No players found')
+            break
+          }
+
+          bot.pathfinder.setMovements(defaultMove)
+          setTrackedGoal(new GoalFollow(nearest, commandSettings.rangeGoal), true, {
+            type: 'follow',
+            entity: nearest,
+            username: nearest.username,
+            range: commandSettings.rangeGoal
+          })
+          say(`Going to nearest player: ${nearest.username}`)
+          break
+        }
+        case message.startsWith('Bot.follow '): {
+          const targetName = message.slice(11).trim()
+          const target = bot.players[targetName]?.entity
+          if (!target) {
+            say(`ERROR: I cannot see ${targetName}`)
+            break
+          }
+          bot.pathfinder.setMovements(defaultMove)
+          setTrackedGoal(new GoalFollow(target, commandSettings.rangeGoal), true, {
+            type: 'follow',
+            entity: target,
+            username: targetName,
+            range: commandSettings.rangeGoal
+          })
+          say(`Following ${targetName}`)
+          break
+        }
+        case message.startsWith('Bot.attack '): {
+          const targetName = message.slice(11).trim()
+          const target = bot.players[targetName]?.entity
+          if (!target) {
+            say(`ERROR: I cannot see ${targetName}`)
+            break
+          }
+          bot.pathfinder.setMovements(defaultMove)
+          setTrackedGoal(new GoalFollow(target, commandSettings.rangeGoal), true)
+          bot.pvp.attack(target)
+          say(`Attacking ${targetName}`)
+          break
+        }
+        case message === 'Bot.guard':
+          say('ERROR: usage Bot.guard <x> <y> <z> or Bot.guard.here')
+          break
+        case message === 'Bot.guard.here':
+          handleGuardHere(usernameFromChat)
+          break
+        case message.startsWith('Bot.guard '): {
+          const args = message.slice(10).trim().split(' ').filter(Boolean)
+          if (args.length !== 3) {
+            say('ERROR: usage Bot.guard <x> <y> <z>')
+            break
+          }
+
+          const [x, y, z] = args.map(Number)
+          if ([x, y, z].some(Number.isNaN)) {
+            say('ERROR: coordinates must be numbers')
+            break
+          }
+
+          handleGuardAtCoordinates(x, y, z)
+          break
+        }
+        case message === 'Bot.guard.stop':
+          stopGuard()
+          break
+        case message === 'Bot.pvp.stop':
+          handleStopPvp()
+          break
+        case message === 'Bot.follow.stop':
+          handleStopFollow()
+          break
+        case message === 'Bot.miner.stop':
+          handleStopMiner()
+          break
+        case message === 'Bot.selfdefense':
+          setSelfDefense(!selfDefenseEnabled)
+          break
+        case message === 'Bot.selfdefense.on':
+          setSelfDefense(true)
+          break
+        case message === 'Bot.selfdefense.off':
+          setSelfDefense(false)
+          break
+        case message === 'Bot.selfdefense.status':
+          say(`Self defense is currently ${selfDefenseEnabled ? 'enabled' : 'disabled'}`)
+          break
+        case message === 'Bot.silent':
+          setSilent(!silentModeRef.value)
+          break
+        case message === 'Bot.silent.on':
+          setSilent(true)
+          break
+        case message === 'Bot.silent.off':
+          setSilent(false)
+          break
+        case message === 'Bot.silent.status':
+          say(`Silent mode is currently ${silentModeRef.value ? 'enabled' : 'disabled'}`)
+          break
+        case message.startsWith('Bot.collect '): {
+          const args = message.slice(12).trim().split(' ').filter(Boolean)
+          if (args.length !== 2) {
+            say('ERROR: usage Bot.collect <blockType> <count>')
+            break
+          }
+
+          const blockType = args[0]
+          const count = Number(args[1])
+
+          if (!Number.isInteger(count) || count <= 0) {
+            say('ERROR: count must be a positive integer')
+            break
+          }
+
+          await handleBlockCollection(blockType, count)
+          break
+        }
+        case message === 'Bot.craft':
+          throw new Error('Usage: Bot.craft <itemId> [count]')
+        case message.startsWith('Bot.craft '): {
+          const args = message.slice(10).trim().split(' ').filter(Boolean)
+          if (args.length < 1 || args.length > 2) {
+            throw new Error('Usage: Bot.craft <itemId> [count]')
+          }
+
+          const itemName = args[0]
+          const count = args.length === 2 ? Number(args[1]) : 1
+          if (!Number.isInteger(count) || count <= 0) {
+            throw new Error('Craft count must be a positive integer')
+          }
+
+          await handleCraftCommand(itemName, count)
+          break
+        }
+        case message === 'Bot.autoEat':
+          setAutoEat(true)
+          break
+        case message === 'Bot.autoEat.stop':
+          setAutoEat(false)
+          break
+        case message === 'Bot.eat':
+          await bot.autoEat.eat()
+          say('Ate food successfully')
+          break
+        case message === 'Bot.empty':
+          await handleEmptyInventory()
+          break
+        case message.startsWith('Bot.mine '): {
+          const blockType = message.slice(9).trim()
+          handleMine(blockType).catch((error) => say(`ERROR: ${error.message}`))
+          break
+        }
+        default:
+          say('ERROR: unknown command')
+          break
+      }
+    } finally {
+      broadcastState(true)
+    }
+  }
+
+  async function waitForQueueAsyncCompletion(command, timeoutMs = 60000, shouldStop = () => false) {
+    const started = Date.now()
+
+    while (Date.now() - started < timeoutMs) {
+      if (shouldStop()) throw new Error('Queue stopped')
+      await waitMs(150)
+    }
+
+    throw new Error(`Timed out waiting for completion of ${normalizeCommand(command)}`)
+  }
+
   async function waitForQueueGotoCompletion(command, timeoutMs = 60000, shouldStop = () => false) {
     const normalized = normalizeCommand(command)
     const commandSettings = getCommandSettings()
@@ -935,9 +1399,21 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
       throw new Error('This command cannot wait for completion')
     }
 
-    processCommand(username, normalized)
+    if (waitForCompletion && normalized.startsWith('Bot.craft')) {
+      await Promise.race([
+        executeCommand(username, normalized),
+        waitForQueueAsyncCompletion(normalized, timeoutMs, shouldStop)
+      ])
+      return
+    }
 
     if (waitForCompletion) {
+      await executeCommand(username, normalized)
+    } else {
+      processCommand(username, normalized)
+    }
+
+    if (waitForCompletion && (normalized.startsWith('Bot.goto ') || normalized === 'Bot.goto.nearest')) {
       await waitForQueueGotoCompletion(normalized, timeoutMs, shouldStop)
     }
   }
@@ -1370,215 +1846,10 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
   }
 
   function processCommand(usernameFromChat, input) {
-    const message = normalizeCommand(input)
-    const commandSettings = getCommandSettings()
-
-    switch (true) {
-      case message === 'Bot.test':
-        say('TEST: success')
-        break
-      case message === 'Bot.come': {
-        const target = bot.players[usernameFromChat]?.entity
-        if (!target) {
-          say(`ERROR: I cannot see ${usernameFromChat}`)
-          break
-        }
-        bot.pathfinder.setMovements(defaultMove)
-        setTrackedGoal(new GoalNear(target.position.x, target.position.y, target.position.z, commandSettings.rangeGoal))
-        say(`Coming to ${usernameFromChat}`)
-        break
-      }
-      case message.startsWith('Bot.goto '): {
-        const args = message.slice(9).trim().split(' ').filter(Boolean)
-
-        if (args.length === 1) {
-          const target = bot.players[args[0]]?.entity
-          if (!target) {
-            say(`ERROR: I cannot see ${args[0]}`)
-            break
-          }
-          bot.pathfinder.setMovements(defaultMove)
-          setTrackedGoal(new GoalFollow(target, commandSettings.rangeGoal), true, {
-            type: 'follow',
-            entity: target,
-            username: args[0],
-            range: commandSettings.rangeGoal
-          })
-          say(`Going to ${args[0]}`)
-          break
-        }
-
-        if (args.length === 3) {
-          const [x, y, z] = args.map(Number)
-          if ([x, y, z].some(Number.isNaN)) {
-            say('ERROR: usage Bot.goto <player> or Bot.goto <x> <y> <z>')
-            break
-          }
-          bot.pathfinder.setMovements(defaultMove)
-          setTrackedGoal(new GoalNear(x, y, z, commandSettings.rangeGoal), false)
-          say(`Going to position ${x} ${y} ${z}`)
-          break
-        }
-
-        say('ERROR: usage Bot.goto <player> or Bot.goto <x> <y> <z>')
-        break
-      }
-      case message === 'Bot.goto.nearest': {
-        const nearest = bot.nearestEntity((entity) => {
-          if (!entity) return false
-          if (entity.type !== 'player') return false
-          if (entity.username === bot.username) return false
-          return true
-        })
-
-        if (!nearest) {
-          say('ERROR: No players found')
-          break
-        }
-
-        bot.pathfinder.setMovements(defaultMove)
-        setTrackedGoal(new GoalFollow(nearest, commandSettings.rangeGoal), true, {
-          type: 'follow',
-          entity: nearest,
-          username: nearest.username,
-          range: commandSettings.rangeGoal
-        })
-        say(`Going to nearest player: ${nearest.username}`)
-        break
-      }
-      case message.startsWith('Bot.follow '): {
-        const targetName = message.slice(11).trim()
-        const target = bot.players[targetName]?.entity
-        if (!target) {
-          say(`ERROR: I cannot see ${targetName}`)
-          break
-        }
-        bot.pathfinder.setMovements(defaultMove)
-        setTrackedGoal(new GoalFollow(target, commandSettings.rangeGoal), true, {
-          type: 'follow',
-          entity: target,
-          username: targetName,
-          range: commandSettings.rangeGoal
-        })
-        say(`Following ${targetName}`)
-        break
-      }
-      case message.startsWith('Bot.attack '): {
-        const targetName = message.slice(11).trim()
-        const target = bot.players[targetName]?.entity
-        if (!target) {
-          say(`ERROR: I cannot see ${targetName}`)
-          break
-        }
-        bot.pathfinder.setMovements(defaultMove)
-        setTrackedGoal(new GoalFollow(target, commandSettings.rangeGoal), true)
-        bot.pvp.attack(target)
-        say(`Attacking ${targetName}`)
-        break
-      }
-      case message === 'Bot.guard':
-        say('ERROR: usage Bot.guard <x> <y> <z> or Bot.guard.here')
-        break
-      case message === 'Bot.guard.here':
-        handleGuardHere(usernameFromChat)
-        break
-      case message.startsWith('Bot.guard '): {
-        const args = message.slice(10).trim().split(' ').filter(Boolean)
-        if (args.length !== 3) {
-          say('ERROR: usage Bot.guard <x> <y> <z>')
-          break
-        }
-
-        const [x, y, z] = args.map(Number)
-        if ([x, y, z].some(Number.isNaN)) {
-          say('ERROR: coordinates must be numbers')
-          break
-        }
-
-        handleGuardAtCoordinates(x, y, z)
-        break
-      }
-      case message === 'Bot.guard.stop':
-        stopGuard()
-        break
-      case message === 'Bot.pvp.stop':
-        handleStopPvp()
-        break
-      case message === 'Bot.follow.stop':
-        handleStopFollow()
-        break
-      case message === 'Bot.miner.stop':
-        handleStopMiner()
-        break
-      case message === 'Bot.selfdefense':
-        setSelfDefense(!selfDefenseEnabled)
-        break
-      case message === 'Bot.selfdefense.on':
-        setSelfDefense(true)
-        break
-      case message === 'Bot.selfdefense.off':
-        setSelfDefense(false)
-        break
-      case message === 'Bot.selfdefense.status':
-        say(`Self defense is currently ${selfDefenseEnabled ? 'enabled' : 'disabled'}`)
-        break
-      case message === 'Bot.silent':
-        setSilent(!silentModeRef.value)
-        break
-      case message === 'Bot.silent.on':
-        setSilent(true)
-        break
-      case message === 'Bot.silent.off':
-        setSilent(false)
-        break
-      case message === 'Bot.silent.status':
-        say(`Silent mode is currently ${silentModeRef.value ? 'enabled' : 'disabled'}`)
-        break
-      case message.startsWith('Bot.collect '): {
-        const args = message.slice(12).trim().split(' ').filter(Boolean)
-        if (args.length !== 2) {
-          say('ERROR: usage Bot.collect <blockType> <count>')
-          break
-        }
-
-        const blockType = args[0]
-        const count = Number(args[1])
-
-        if (!Number.isInteger(count) || count <= 0) {
-          say('ERROR: count must be a positive integer')
-          break
-        }
-
-        handleBlockCollection(blockType, count).catch((error) => {
-          say(`ERROR: ${error.message}`)
-        })
-        break
-      }
-      case message === 'Bot.autoEat':
-        setAutoEat(true)
-        break
-      case message === 'Bot.autoEat.stop':
-        setAutoEat(false)
-        break
-      case message === 'Bot.eat':
-        bot.autoEat.eat()
-          .then(() => say('Ate food successfully'))
-          .catch((error) => say(`ERROR: Failed to eat: ${error.message}`))
-        break
-      case message === 'Bot.empty':
-        handleEmptyInventory().catch((error) => say(`ERROR: ${error.message}`))
-        break
-      case message.startsWith('Bot.mine '): {
-        const blockType = message.slice(9).trim()
-        handleMine(blockType).catch((error) => say(`ERROR: ${error.message}`))
-        break
-      }
-      default:
-        say('ERROR: unknown command')
-        break
-    }
-
-    broadcastState(true)
+    executeCommand(usernameFromChat, input).catch((error) => {
+      say(`ERROR: ${error.message}`)
+      broadcastState(true)
+    })
   }
 
   bot.on('spawn', () => {

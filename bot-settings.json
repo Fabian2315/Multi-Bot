@@ -12,6 +12,7 @@
   "viewerTargetBotId": "starter",
   "commandSettings": {
     "rangeGoal": 1,
+    "craftSearchRadius": 32,
     "emptyInventoryRadius": 50,
     "collectRadius": 64,
     "mineSearchRadius": 64,
