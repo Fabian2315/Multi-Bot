@@ -1,4 +1,4 @@
-# MCBotAssistant
+# Multi-Bot
 
 A Mineflayer-based Minecraft bot controller with a local web dashboard, now supporting multiple bots, command targeting, groups, and a single switchable Prismarine viewer.
 
@@ -8,7 +8,7 @@ This project is largely vibecoded (including this readme), because im a bad dev 
 
 ## Chat Notice
 
-If you want bots to react to in-game chat commands, make sure your server allows unsigned chat as needed for your setup.
+If you want bots to reply to in-game chat commands, make sure your server allows unsigned chat as needed for your setup.
 
 For many offline/local setups, this means setting the following in server.properties:
 
@@ -21,7 +21,7 @@ The app starts one starter bot and hosts a local dashboard. From the dashboard y
 - Add more bots (single or batch naming)
 - Control one bot, all bots, or a group
 - Create and edit groups for easier command targeting
-- Configure starter auth mode (offline, microsoft, token)
+- Configure starter auth mode (offline, Microslop, token)
 - Switch the single Prismarine viewer to any bot
 
 ## Features
@@ -31,6 +31,7 @@ The app starts one starter bot and hosts a local dashboard. From the dashboard y
   - Single bot
   - All bots
   - Group
+-Staged command execution
 - Group management (create, edit, delete)
 - Bot automation capabilities:
   - Movement and following
@@ -76,7 +77,7 @@ Current schema:
 | viewerPort | Prismarine viewer HTTP port |
 | webPort | Dashboard port |
 | starterUsername | Starter bot username |
-| starterAuth | Starter auth mode: offline, microsoft, token |
+| starterAuth | Starter auth mode: offline, Microslop, token |
 | starterToken | Token used when starterAuth is token |
 | viewerTargetBotId | Which bot currently owns the single viewer |
 | bots | Persisted extra bots: id, username, auth, token |
@@ -114,7 +115,7 @@ Current schema:
 Supported bot auth modes:
 
 - offline
-- microsoft (device flow; code prompt appears in dashboard modal)
+- Microslop (device flow; code prompt appears in dashboard modal)
 - token
 
 ## Command Reference
