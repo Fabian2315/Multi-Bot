@@ -4,6 +4,7 @@ const http = require('http')
 const express = require('express')
 const { Server } = require('socket.io')
 const mineflayer = require('mineflayer')
+const tpsPlugin = require('mineflayer-tps')(mineflayer)
 const mineflayerViewer = require('prismarine-viewer').mineflayer
 const {
   pathfinder,
@@ -48,6 +49,7 @@ const DEFAULT_BOT_SETTINGS = {
   starterAuth: 'offline',
   starterToken: '',
   viewerEnabled: true,
+  tpsDashboardEnabled: true,
   viewerTargetBotId: STARTER_BOT_ID,
   commandSettings: { ...DEFAULT_COMMAND_SETTINGS },
   queueSettings: { ...DEFAULT_QUEUE_SETTINGS },
@@ -121,6 +123,7 @@ function loadBotSettings() {
       starterAuth: normalizeAuth(parsed.starterAuth),
       starterToken: String(parsed.starterToken || ''),
       viewerEnabled: typeof parsed.viewerEnabled === 'boolean' ? parsed.viewerEnabled : DEFAULT_BOT_SETTINGS.viewerEnabled,
+      tpsDashboardEnabled: typeof parsed.tpsDashboardEnabled === 'boolean' ? parsed.tpsDashboardEnabled : DEFAULT_BOT_SETTINGS.tpsDashboardEnabled,
       viewerTargetBotId: String(parsed.viewerTargetBotId || STARTER_BOT_ID),
       commandSettings: normalizeCommandSettings(parsed.commandSettings),
       queueSettings: normalizeQueueSettings(parsed.queueSettings),
@@ -158,6 +161,7 @@ function saveBotSettings(settings) {
     starterAuth: normalizeAuth(settings.starterAuth),
     starterToken: String(settings.starterToken || ''),
     viewerEnabled: typeof settings.viewerEnabled === 'boolean' ? settings.viewerEnabled : DEFAULT_BOT_SETTINGS.viewerEnabled,
+    tpsDashboardEnabled: typeof settings.tpsDashboardEnabled === 'boolean' ? settings.tpsDashboardEnabled : DEFAULT_BOT_SETTINGS.tpsDashboardEnabled,
     viewerTargetBotId: String(settings.viewerTargetBotId || STARTER_BOT_ID),
     commandSettings: normalizeCommandSettings(settings.commandSettings),
     queueSettings: normalizeQueueSettings(settings.queueSettings),
@@ -187,6 +191,7 @@ const webLogs = []
 let io = null
 let lastStateSignature = ''
 let viewerEnabled = Boolean(botSettings.viewerEnabled)
+let tpsDashboardEnabled = typeof botSettings.tpsDashboardEnabled === 'boolean' ? botSettings.tpsDashboardEnabled : true
 let viewerAttachedBotId = null
 const queueByTarget = new Map()
 
@@ -275,6 +280,7 @@ function getDashboardState() {
     host: botSettings.host,
     port: botSettings.port,
     viewerEnabled,
+    tpsDashboardEnabled,
     viewerTargetBotId: botSettings.viewerTargetBotId,
     viewerActiveBotId: viewerAttachedBotId,
     viewerUrl: getViewerUrl(),
@@ -603,6 +609,13 @@ function setViewerEnabled(enabled) {
   broadcastState(true)
 }
 
+function setTpsDashboardEnabled(enabled) {
+  tpsDashboardEnabled = Boolean(enabled)
+  botSettings.tpsDashboardEnabled = tpsDashboardEnabled
+  saveBotSettings(botSettings)
+  broadcastState(true)
+}
+
 function installChatProxy(runtime, silentModeRef) {
   const targetBot = runtime.bot
   if (!targetBot || targetBot.__chatProxyInstalled) return
@@ -693,6 +706,7 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
   bot.loadPlugin(collectBlock)
   bot.loadPlugin(autoEat)
   bot.loadPlugin(armorManager)
+  bot.loadPlugin(tpsPlugin)
 
   const runtime = {
     id,
@@ -741,6 +755,9 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
 
   function getState() {
     const connected = Boolean(bot.player)
+    const currentTps = (tpsDashboardEnabled && connected && typeof bot.getTps === 'function')
+      ? Number(bot.getTps())
+      : null
 
     const state = {
       id,
@@ -756,6 +773,7 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
       viewerTarget: botSettings.viewerTargetBotId === id,
       viewerActive: viewerAttachedBotId === id,
       viewerUrl: getViewerUrl(),
+      tps: Number.isFinite(currentTps) ? Math.round(currentTps * 100) / 100 : null,
       health: connected && typeof bot.health === 'number' ? bot.health : null,
       hunger: connected && typeof bot.food === 'number' ? bot.food : null,
       inventory: getInventory()
@@ -1809,7 +1827,7 @@ function startWebServer() {
   })
 
   app.get('/api/settings', (req, res) => {
-    res.json({ ...botSettings, viewerEnabled })
+    res.json({ ...botSettings, viewerEnabled, tpsDashboardEnabled })
   })
 
   app.post('/api/settings', (req, res) => {
@@ -1825,6 +1843,9 @@ function startWebServer() {
       starterUsername: String(req.body?.starterUsername ?? botSettings.starterUsername),
       starterAuth: normalizeAuth(req.body?.starterAuth ?? botSettings.starterAuth),
       starterToken: String(req.body?.starterToken ?? botSettings.starterToken),
+      tpsDashboardEnabled: typeof req.body?.tpsDashboardEnabled === 'boolean'
+        ? req.body.tpsDashboardEnabled
+        : tpsDashboardEnabled,
       viewerTargetBotId: String(req.body?.viewerTargetBotId || botSettings.viewerTargetBotId),
       commandSettings: nextCommandSettings,
       queueSettings: normalizeQueueSettings(req.body?.queueSettings ?? botSettings.queueSettings)
@@ -1835,6 +1856,7 @@ function startWebServer() {
     }
 
     Object.assign(botSettings, nextSettings)
+    tpsDashboardEnabled = Boolean(nextSettings.tpsDashboardEnabled)
     saveBotSettings(botSettings)
 
     pushWebLog('system', 'Saved settings. Restart bots to apply connection/auth changes.')
@@ -2146,6 +2168,11 @@ function startWebServer() {
     if (toggleName === 'viewer') {
       setViewerEnabled(!viewerEnabled)
       return res.json({ ok: true, viewerEnabled })
+    }
+
+    if (toggleName === 'tpsDashboard') {
+      setTpsDashboardEnabled(!tpsDashboardEnabled)
+      return res.json({ ok: true, tpsDashboardEnabled })
     }
 
     try {

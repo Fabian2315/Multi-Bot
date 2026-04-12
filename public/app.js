@@ -9,6 +9,7 @@ const commandInput = document.getElementById('commandInput')
 const toggleSelfDefense = document.getElementById('toggleSelfDefense')
 const toggleAutoEat = document.getElementById('toggleAutoEat')
 const toggleSilentMode = document.getElementById('toggleSilentMode')
+const toggleTpsDashboard = document.getElementById('toggleTpsDashboard')
 const toggleViewer = document.getElementById('toggleViewer')
 const restartBotBtn = document.getElementById('restartBotBtn')
 const shutdownBtn = document.getElementById('shutdownBtn')
@@ -23,6 +24,7 @@ const healthValue = document.getElementById('healthValue')
 const hungerFill = document.getElementById('hungerFill')
 const hungerValue = document.getElementById('hungerValue')
 const coordValue = document.getElementById('coordValue')
+const tpsValue = document.getElementById('tpsValue')
 const inventorySummary = document.getElementById('inventorySummary')
 const inventoryEmpty = document.getElementById('inventoryEmpty')
 const inventoryList = document.getElementById('inventoryList')
@@ -70,6 +72,7 @@ let dashboardState = {
   bots: [],
   groups: [],
   viewerEnabled: true,
+  tpsDashboardEnabled: true,
   viewerTargetBotId: 'starter',
   viewerActiveBotId: null,
   viewerUrl: 'http://localhost:3008'
@@ -309,6 +312,7 @@ function renderVitals() {
     healthValue.textContent = '-- / 20'
     hungerValue.textContent = '-- / 20'
     coordValue.textContent = '-- / -- / --'
+    tpsValue.textContent = '--'
     inventorySummary.textContent = '0 stacks | 0 items'
     inventoryEmpty.style.display = 'block'
     inventoryList.innerHTML = ''
@@ -326,6 +330,11 @@ function renderVitals() {
 
   const pos = bot.position
   coordValue.textContent = pos ? `${pos.x.toFixed(1)},  ${pos.y.toFixed(1)},  ${pos.z.toFixed(1)}` : '-- / -- / --'
+  if (!dashboardState.tpsDashboardEnabled) {
+    tpsValue.textContent = 'Disabled'
+  } else {
+    tpsValue.textContent = typeof bot.tps === 'number' ? bot.tps.toFixed(2) : '--'
+  }
 
   const inventory = Array.isArray(bot.inventory) ? bot.inventory : []
   const totalItems = inventory.reduce((sum, item) => sum + (Number(item.count) || 0), 0)
@@ -356,6 +365,9 @@ function renderStatusAndViewer() {
 
   toggleViewer.textContent = `Viewer: ${dashboardState.viewerEnabled ? 'ON' : 'OFF'}`
   toggleViewer.style.background = dashboardState.viewerEnabled ? '#1c7c54' : '#a63a50'
+
+  toggleTpsDashboard.textContent = `TPS Dashboard: ${dashboardState.tpsDashboardEnabled ? 'ON' : 'OFF'}`
+  toggleTpsDashboard.style.background = dashboardState.tpsDashboardEnabled ? '#1c7c54' : '#a63a50'
 
   viewerLink.href = dashboardState.viewerUrl
 
@@ -696,6 +708,14 @@ toggleAutoEat.addEventListener('click', async () => {
 toggleSilentMode.addEventListener('click', async () => {
   try {
     await postJson('/api/toggle/silent', { target: selectedTarget })
+  } catch (error) {
+    appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+  }
+})
+
+toggleTpsDashboard.addEventListener('click', async () => {
+  try {
+    await postJson('/api/toggle/tpsDashboard')
   } catch (error) {
     appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
   }
