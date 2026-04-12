@@ -101,6 +101,17 @@ let selectedQueue = {
 let autocompleteCommands = []
 let autocompleteItems = []
 let activeAutocompleteOptions = []
+let lastViewerFrameUrl = ''
+
+function normalizeUrl(url) {
+  if (!url) return ''
+
+  try {
+    return new URL(url, window.location.href).href
+  } catch {
+    return String(url)
+  }
+}
 
 function clampToPercent(value, max) {
   if (typeof value !== 'number' || Number.isNaN(value)) return 0
@@ -463,12 +474,17 @@ function renderStatusAndViewer() {
   viewerLink.href = dashboardState.viewerUrl
 
   if (dashboardState.viewerEnabled) {
-    if (viewerFrame.src !== dashboardState.viewerUrl) {
-      viewerFrame.src = dashboardState.viewerUrl
+    const nextViewerUrl = normalizeUrl(dashboardState.viewerUrl)
+    if (lastViewerFrameUrl !== nextViewerUrl) {
+      viewerFrame.src = nextViewerUrl
+      lastViewerFrameUrl = nextViewerUrl
     }
     viewerNotice.textContent = `Viewer target: ${dashboardState.viewerTargetBotId || 'none'} | active: ${dashboardState.viewerActiveBotId || 'none'}`
   } else {
-    viewerFrame.src = 'about:blank'
+    if (lastViewerFrameUrl !== 'about:blank') {
+      viewerFrame.src = 'about:blank'
+      lastViewerFrameUrl = 'about:blank'
+    }
     viewerNotice.textContent = 'Viewer is disabled.'
   }
 }
@@ -1025,6 +1041,7 @@ socket.on('bootstrap', ({ state, settings, logs }) => {
 })
 
 socket.on('state', (state) => {
+  const previousTarget = selectedTarget
   dashboardState = state
 
   if (!dashboardState.bots.some((bot) => bot.id === selectedBotForDetails)) {
@@ -1036,7 +1053,10 @@ socket.on('state', (state) => {
   }
 
   renderAll()
-  loadSelectedQueue()
+
+  if (selectedTarget !== previousTarget) {
+    loadSelectedQueue()
+  }
 })
 
 socket.on('queue_state', ({ target, queue }) => {

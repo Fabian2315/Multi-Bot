@@ -1,0 +1,3 @@
+add place block function
+make command queue save and load system
+add mobs as valid bot.attack targets
