@@ -2974,6 +2974,7 @@ function startWebServer() {
     try {
       const target = String(req.body?.target || STARTER_BOT_ID)
       const name = normalizeSavedQueueName(req.body?.name)
+      const overwrite = Boolean(req.body?.overwrite)
       const queue = ensureTargetQueue(target)
       if (queue.running) throw new Error('Cannot save queue while running')
       if (!queue.steps.length) throw new Error('Cannot save an empty queue')
@@ -2981,12 +2982,56 @@ function startWebServer() {
       const now = new Date().toISOString()
       const targetSaved = ensureTargetSavedQueues(target)
       const previous = targetSaved.get(name)
+      if (previous && !overwrite) {
+        return res.status(409).json({
+          ok: false,
+          error: 'A saved queue with this name already exists. Confirm overwrite to replace it.',
+          code: 'SAVED_QUEUE_EXISTS'
+        })
+      }
+
       targetSaved.set(name, {
         name,
         createdAt: previous?.createdAt || now,
         updatedAt: now,
         settings: normalizeQueueSettings(queue.settings),
         steps: cloneQueueSteps(queue.steps)
+      })
+
+      saveQueuePersistence()
+      emitSavedQueues(target)
+      return res.json({ ok: true, queues: serializeSavedQueues(target) })
+    } catch (error) {
+      return res.status(400).json({ ok: false, error: error.message })
+    }
+  })
+
+  app.put('/api/queue/saved/:name/rename', (req, res) => {
+    try {
+      const target = String(req.body?.target || req.query?.target || STARTER_BOT_ID)
+      const oldName = normalizeSavedQueueName(req.params.name)
+      const newName = normalizeSavedQueueName(req.body?.newName)
+      const overwrite = Boolean(req.body?.overwrite)
+      const targetSaved = ensureTargetSavedQueues(target)
+      const existing = targetSaved.get(oldName)
+      if (!existing) {
+        return res.status(404).json({ ok: false, error: 'Saved queue not found' })
+      }
+
+      if (oldName !== newName && targetSaved.has(newName) && !overwrite) {
+        return res.status(409).json({
+          ok: false,
+          error: 'Another saved queue already uses that name. Confirm overwrite to replace it.',
+          code: 'SAVED_QUEUE_EXISTS'
+        })
+      }
+
+      const now = new Date().toISOString()
+      targetSaved.delete(oldName)
+      targetSaved.set(newName, {
+        ...existing,
+        name: newName,
+        updatedAt: now
       })
 
       saveQueuePersistence()

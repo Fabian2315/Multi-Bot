@@ -740,8 +740,37 @@ function renderSavedQueues() {
       }
     })
 
+    const renameBtn = document.createElement('button')
+    renameBtn.className = 'mini-btn'
+    renameBtn.textContent = 'Rename'
+    renameBtn.disabled = selectedQueue.running
+    renameBtn.addEventListener('click', async () => {
+      try {
+        const nextNameRaw = window.prompt('Rename saved queue:', savedQueue.name)
+        if (nextNameRaw === null) return
+        const nextName = String(nextNameRaw || '').trim()
+        if (!nextName || nextName === savedQueue.name) return
+
+        const nameAlreadyUsed = selectedSavedQueues.some((item) => item.name === nextName && item.name !== savedQueue.name)
+        let overwrite = false
+        if (nameAlreadyUsed) {
+          overwrite = window.confirm(`A saved queue named "${nextName}" already exists. Overwrite it?`)
+          if (!overwrite) return
+        }
+
+        await putJson(`/api/queue/saved/${encodeURIComponent(savedQueue.name)}/rename`, {
+          target: selectedTarget,
+          newName: nextName,
+          overwrite
+        })
+      } catch (error) {
+        appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+      }
+    })
+
     actions.appendChild(loadBtn)
     actions.appendChild(runBtn)
+    actions.appendChild(renameBtn)
     actions.appendChild(deleteBtn)
 
     row.appendChild(info)
@@ -1257,9 +1286,17 @@ savedQueueForm.addEventListener('submit', async (event) => {
     const name = savedQueueNameInput.value.trim()
     if (!name) return
 
+    const nameAlreadyUsed = selectedSavedQueues.some((item) => item.name === name)
+    let overwrite = false
+    if (nameAlreadyUsed) {
+      overwrite = window.confirm(`A saved queue named "${name}" already exists. Overwrite it?`)
+      if (!overwrite) return
+    }
+
     await postJson('/api/queue/saved', {
       target: selectedTarget,
-      name
+      name,
+      overwrite
     })
 
     savedQueueNameInput.value = ''
