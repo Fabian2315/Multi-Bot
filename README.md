@@ -39,8 +39,13 @@ The app starts one starter bot and hosts a local dashboard. From the dashboard y
   - Self-defense retaliation
   - Block collection and mining loop
   - Craft planning and table-assisted crafting
+  - Furnace/smoker/blast-furnace smelting
   - Auto-eat and manual eat
   - Inventory emptying to nearest chest
+- Context-aware command input autocomplete:
+  - Command suggestions at root input
+  - Item-id suggestions for craft/smelt item arguments
+  - Tab-to-apply top suggestion
 - Single Prismarine viewer instance, switchable target bot
 - Web dashboard with live state/logs over Socket.IO
 - Settings persistence in bot-settings.json
@@ -81,7 +86,7 @@ Current schema:
 | starterAuth | Starter auth mode: offline, Microslop, token |
 | starterToken | Token used when starterAuth is token |
 | viewerTargetBotId | Which bot currently owns the single viewer |
-| commandSettings.craftSearchRadius | Maximum distance to search for a crafting table |
+| commandSettings.craftSearchRadius | Maximum distance to search for crafting/smelting stations |
 | bots | Persisted extra bots: id, username, auth, token |
 | groups | Persisted groups: id, name, botIds |
 
@@ -100,6 +105,12 @@ Current schema:
   - Specific bot
   - Group
 - Quick action buttons and manual command input use this target.
+
+### Smart Autocomplete
+
+- Command input suggests command names when you have no arguments yet.
+- When entering `craft` or `smelt`, the first argument switches to item-id suggestions.
+- Press `Tab` in the command field to apply the top suggestion.
 
 ### Group Management
 
@@ -146,6 +157,7 @@ Commands must start with Bot. to be interpreted as commands.
 - Bot.silent.status
 - Bot.collect <blockType> <count>
 - Bot.craft <itemId> [count]
+- Bot.smelt <itemId> [count] [station]
 - Bot.mine <blockType>
 - Bot.miner.stop
 - Bot.autoEat
@@ -158,7 +170,9 @@ Commands must start with Bot. to be interpreted as commands.
 - Crafting uses Minecraft item ids such as `oak_planks`, `stick`, or `wooden_pickaxe`.
 - The bot resolves recipes from `minecraft-data` instead of a large handwritten recipe file.
 - For crafting-table recipes, the bot first checks inventory materials, then searches for a nearby crafting table, walks to it, and crafts the item.
-- Queue wait-for-completion supports both `Bot.goto` variants and `Bot.craft`.
+- Smelting uses a compact local furnace registry (`data/recipe-registry.js`) for furnace/smoker/blast-furnace outputs.
+- Smelting command format: `Bot.smelt <itemId> [count] [station]` where station can be `auto`, `furnace`, `smoker`, or `blast_furnace`.
+- Queue wait-for-completion supports `Bot.goto` variants, `Bot.craft`, and `Bot.smelt`.
 
 ## API Summary
 
@@ -166,6 +180,7 @@ Primary routes:
 
 - GET /api/status
 - GET /api/settings
+- GET /api/autocomplete
 - POST /api/settings
 - GET /api/bots
 - POST /api/bots
