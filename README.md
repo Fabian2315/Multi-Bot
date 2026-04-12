@@ -171,7 +171,7 @@ Commands must start with Bot. to be interpreted as commands.
 - The bot resolves recipes from `minecraft-data` instead of a large handwritten recipe file.
 - For crafting-table recipes, the bot first checks inventory materials, then searches for a nearby crafting table, walks to it, and crafts the item.
 - Smelting uses a compact local furnace registry (`data/recipe-registry.js`) for furnace/smoker/blast-furnace outputs.
-- Smelting command format: `Bot.smelt <itemId> [count] [station]` where station can be `auto`, `furnace`, `smoker`, or `blast_furnace`.
+- Smelting command format: `Bot.smelt <itemId> [count] [station]` where station can be `auto`, `furnace`, `smoker`, or `blast_furnace` (defaults to `furnace` when omitted).
 - Queue wait-for-completion supports `Bot.goto` variants, `Bot.craft`, and `Bot.smelt`.
 
 ## API Summary

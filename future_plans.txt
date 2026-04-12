@@ -1,3 +1,4 @@
 add place block function
 make command queue save and load system
 add mobs as valid bot.attack targets
+Fix smelting command to make it easier

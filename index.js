@@ -1306,7 +1306,7 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
     })[0]
   }
 
-  function planSmelt(outputItemName, requestedCount, stationPreference = 'auto') {
+  function planSmelt(outputItemName, requestedCount, stationPreference = 'furnace') {
     const target = resolveCraftTarget(outputItemName)
     const forcedStation = resolveFurnaceStationName(stationPreference)
     const entries = recipeRegistry.FURNACE_RECIPES_BY_OUTPUT[target.normalizedName] || []
@@ -1387,7 +1387,7 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
     return collected
   }
 
-  async function handleSmeltCommand(itemName, requestedCount, stationPreference = 'auto') {
+  async function handleSmeltCommand(itemName, requestedCount, stationPreference = 'furnace') {
     if (!bot.player || !bot.entity) {
       throw new Error('Bot must be connected before it can smelt')
     }
@@ -1674,7 +1674,7 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
 
           const itemName = args[0]
           const count = args.length >= 2 ? Number(args[1]) : 1
-          const station = args.length >= 3 ? args[2] : 'auto'
+          const station = args.length >= 3 ? args[2] : 'furnace'
 
           if (!Number.isInteger(count) || count <= 0) {
             throw new Error('Smelt count must be a positive integer')
