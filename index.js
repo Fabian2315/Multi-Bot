@@ -17,6 +17,7 @@ let autoEat = null
 let autoEatLoadAttempted = false
 const armorManager = require('mineflayer-armor-manager')
 const nbt = require('prismarine-nbt')
+const Vec3 = require('vec3')
 const recipeRegistry = require('./data/recipe-registry')
 
 const IS_PACKAGED = typeof process.pkg !== 'undefined'
@@ -75,7 +76,8 @@ const COMMAND_AUTOCOMPLETE = [
   'Bot.autoEat',
   'Bot.autoEat.stop',
   'Bot.eat',
-  'Bot.empty'
+  'Bot.empty',
+  'Bot.place <blockName> [count]'
 ]
 
 const DEFAULT_BOT_SETTINGS = {
@@ -1610,6 +1612,81 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
     say(`SUCCESS: Crafted ${craftedCount} ${plan.label} using ${stationLabel}`)
   }
 
+  function findPlacementSpot() {
+    const pos = bot.entity.position.floored()
+    const yaw = bot.entity.yaw
+    const fwdX = -Math.sin(yaw)
+    const fwdZ = -Math.cos(yaw)
+    const absFwdX = Math.abs(fwdX)
+    const absFwdZ = Math.abs(fwdZ)
+    const fx = absFwdX >= absFwdZ ? Math.sign(fwdX) : 0
+    const fz = absFwdZ > absFwdX ? Math.sign(fwdZ) : 0
+    // right = rotate forward 90 degrees clockwise
+    const rx = fz
+    const rz = -fx
+
+    // Candidate offsets ordered by priority: front, front-down, front-up, left, right, behind
+    const offsets = [
+      new Vec3(fx, 0, fz),
+      new Vec3(fx, -1, fz),
+      new Vec3(fx, 1, fz),
+      new Vec3(-rx, 0, -rz),
+      new Vec3(rx, 0, rz),
+      new Vec3(-fx, 0, -fz)
+    ]
+
+    const faces = [
+      new Vec3(0, 1, 0),
+      new Vec3(0, -1, 0),
+      new Vec3(1, 0, 0),
+      new Vec3(-1, 0, 0),
+      new Vec3(0, 0, 1),
+      new Vec3(0, 0, -1)
+    ]
+
+    for (const offset of offsets) {
+      const candidate = pos.plus(offset)
+      const candidateBlock = bot.blockAt(candidate)
+      if (!candidateBlock || candidateBlock.boundingBox !== 'empty') continue
+
+      for (const face of faces) {
+        const neighbor = bot.blockAt(candidate.plus(face))
+        if (neighbor && neighbor.boundingBox !== 'empty') {
+          return { refBlock: neighbor, faceVec: face.scaled(-1) }
+        }
+      }
+    }
+
+    return null
+  }
+
+  async function handlePlaceCommand(blockName, count) {
+    const blockData = mcData.blocksByName[blockName]
+    const itemData = blockData ? (mcData.itemsByName[blockName] ?? { id: blockData.id, name: blockName }) : mcData.itemsByName[blockName]
+    if (!blockData && !mcData.itemsByName[blockName]) {
+      throw new Error(`Unknown block: ${blockName}`)
+    }
+    const itemId = itemData ? itemData.id : blockData.id
+
+    const available = countInventoryItem(itemId)
+    if (available < count) {
+      throw new Error(`Not enough ${blockName} in inventory (have ${available}, need ${count})`)
+    }
+
+    const invItem = bot.inventory.items().find((i) => i.type === itemId)
+    await bot.equip(invItem, 'hand')
+
+    for (let i = 0; i < count; i++) {
+      const spot = findPlacementSpot()
+      if (!spot) throw new Error('No valid placement spot found nearby')
+      const { refBlock, faceVec } = spot
+      await bot.lookAt(refBlock.position.offset(faceVec.x * 0.5 + 0.5, faceVec.y * 0.5 + 0.5, faceVec.z * 0.5 + 0.5))
+      await bot.placeBlock(refBlock, faceVec)
+    }
+
+    say(`Placed ${count} ${blockName}`)
+  }
+
   async function executeCommand(usernameFromChat, input) {
     const message = normalizeCommand(input)
     const commandSettings = getCommandSettings()
@@ -1792,6 +1869,21 @@ function createBotRuntime({ id, username, auth = 'offline', token = '', isStarte
           }
 
           await handleBlockCollection(blockType, count)
+          break
+        }
+        case message === 'Bot.place':
+          throw new Error('Usage: Bot.place <blockName> [count]')
+        case message.startsWith('Bot.place '): {
+          const args = message.slice(10).trim().split(' ').filter(Boolean)
+          if (args.length < 1 || args.length > 2) {
+            throw new Error('Usage: Bot.place <blockName> [count]')
+          }
+          const blockName = args[0]
+          const count = args.length === 2 ? Number(args[1]) : 1
+          if (!Number.isInteger(count) || count <= 0) {
+            throw new Error('Place count must be a positive integer')
+          }
+          await handlePlaceCommand(blockName, count)
           break
         }
         case message === 'Bot.craft':

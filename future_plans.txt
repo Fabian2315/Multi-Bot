@@ -1,4 +1,6 @@
-add place block function
-make command queue save and load system
+add place block function - done
+make command queue save and load system - done 
 add mobs as valid bot.attack targets
 Fix smelting command to make it easier - partially done
+add support for using the bow in combat
+add support for using the shield in combat
