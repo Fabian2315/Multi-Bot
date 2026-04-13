@@ -372,10 +372,11 @@ function normalizeQueueStep(stepInput) {
   const step = stepInput || {}
   const type = String(step.type || '').toLowerCase()
   const id = String(step.id || makeQueueStepId())
+  const isWaitType = type === 'wait' || type === 'force_wait' || type === 'force-wait'
 
-  if (type === 'wait') {
+  if (isWaitType) {
     const seconds = normalizeNumber(step.seconds, 1, { min: 1, max: 3600 })
-    return { id, type: 'wait', seconds }
+    return { id, type: 'force_wait', seconds }
   }
 
   if (type === 'command') {
@@ -390,7 +391,7 @@ function normalizeQueueStep(stepInput) {
     return { id, type: 'command', command, waitForCompletion }
   }
 
-  throw new Error('Queue step type must be "command" or "wait"')
+  throw new Error('Queue step type must be "command" or "force_wait"')
 }
 
 function getQueueDefaultSettings() {
@@ -632,7 +633,7 @@ async function runQueueForBot({ queue, botId, username }) {
 
     while (true) {
       try {
-        if (step.type === 'wait') {
+        if (step.type === 'wait' || step.type === 'force_wait') {
           await waitMsWithStop(step.seconds * 1000, () => queue.stopRequested)
         } else {
           const runtime = runtimes.get(botId)

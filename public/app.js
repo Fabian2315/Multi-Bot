@@ -577,8 +577,8 @@ function renderQueueControls() {
 }
 
 function queueStepSummary(step) {
-  if (step.type === 'wait') {
-    return `Wait ${step.seconds}s`
+  if (step.type === 'wait' || step.type === 'force_wait') {
+    return `Force wait ${step.seconds}s`
   }
 
   const waitText = step.waitForCompletion ? ' (wait for completion)' : ''
@@ -1249,7 +1249,7 @@ queueStepForm.addEventListener('submit', async (event) => {
       await postJson('/api/queue/step', {
         target: selectedTarget,
         step: {
-          type: 'wait',
+          type: 'force_wait',
           seconds
         }
       })

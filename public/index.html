@@ -156,12 +156,12 @@
           <div class="panel-grid queue-grid">
             <article class="card">
               <h2>Add Queue Step</h2>
-              <p class="muted">Build staged actions for the selected target. Wait-for-completion works with Bot.goto commands, Bot.craft, and Bot.smelt.</p>
+              <p class="muted">Build staged actions for the selected target. Use Force Wait to pause the queue for an exact number of seconds. Wait-for-completion works with Bot.goto commands, Bot.craft, and Bot.smelt.</p>
               <form id="queueStepForm" class="settings-form queue-step-form">
                 <label>Step Type
                   <select id="queueStepType">
                     <option value="command">Command</option>
-                    <option value="wait">Wait</option>
+                    <option value="force_wait">Force Wait</option>
                   </select>
                 </label>
 
