@@ -24,8 +24,11 @@ const IS_PACKAGED = typeof process.pkg !== 'undefined'
 const APP_BASE_DIR = IS_PACKAGED ? path.dirname(process.execPath) : __dirname
 const SETTINGS_FILE = path.join(APP_BASE_DIR, 'bot-settings.json')
 const QUEUE_PERSISTENCE_FILE = path.join(APP_BASE_DIR, 'queue-persistence.json')
+let queuePersistenceFile = QUEUE_PERSISTENCE_FILE
 const BUNDLED_SETTINGS_FILE = path.join(__dirname, 'bot-settings.json')
 const STARTER_BOT_ID = 'starter'
+const QUEUE_SAVE_SLOT_COUNT = 5
+const QUEUE_SLOT_NAME_PREFIX = '__slot_'
 
 const DEFAULT_COMMAND_SETTINGS = {
   rangeGoal: 1,
@@ -409,6 +412,31 @@ function normalizeSavedQueueName(name) {
   return normalized
 }
 
+function normalizeSavedQueueSlot(slot) {
+  const normalized = normalizeNumber(slot, NaN, { integer: true })
+  if (!Number.isInteger(normalized) || normalized < 1 || normalized > QUEUE_SAVE_SLOT_COUNT) {
+    throw new Error(`Saved queue slot must be an integer between 1 and ${QUEUE_SAVE_SLOT_COUNT}`)
+  }
+  return normalized
+}
+
+function makeSavedQueueSlotName(slot) {
+  return `${QUEUE_SLOT_NAME_PREFIX}${normalizeSavedQueueSlot(slot)}`
+}
+
+function parseSavedQueueSlotName(name) {
+  const raw = String(name || '')
+  if (!raw.startsWith(QUEUE_SLOT_NAME_PREFIX)) return null
+
+  const parsed = Number(raw.slice(QUEUE_SLOT_NAME_PREFIX.length))
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > QUEUE_SAVE_SLOT_COUNT) return null
+  return parsed
+}
+
+function isInternalSavedQueueName(name) {
+  return parseSavedQueueSlotName(name) !== null
+}
+
 function ensureTargetSavedQueues(target) {
   const targetKey = String(target || STARTER_BOT_ID)
   if (!savedQueuesByTarget.has(targetKey)) {
@@ -420,6 +448,7 @@ function ensureTargetSavedQueues(target) {
 function serializeSavedQueues(target) {
   const targetSaved = ensureTargetSavedQueues(target)
   return Array.from(targetSaved.values())
+    .filter((entry) => !isInternalSavedQueueName(entry.name))
     .map((entry) => ({
       name: entry.name,
       createdAt: entry.createdAt,
@@ -428,6 +457,25 @@ function serializeSavedQueues(target) {
       settings: normalizeQueueSettings(entry.settings)
     }))
     .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
+}
+
+function serializeSavedQueueSlots(target) {
+  const targetSaved = ensureTargetSavedQueues(target)
+  const slots = []
+
+  for (let slot = 1; slot <= QUEUE_SAVE_SLOT_COUNT; slot += 1) {
+    const key = makeSavedQueueSlotName(slot)
+    const entry = targetSaved.get(key)
+    slots.push({
+      slot,
+      hasQueue: Boolean(entry),
+      updatedAt: entry?.updatedAt || null,
+      stepCount: entry ? safeArray(entry.steps).length : 0,
+      settings: entry ? normalizeQueueSettings(entry.settings) : null
+    })
+  }
+
+  return slots
 }
 
 function emitSavedQueues(target) {
@@ -442,7 +490,7 @@ function loadQueuePersistence() {
 
   let parsed = null
   try {
-    const raw = fs.readFileSync(QUEUE_PERSISTENCE_FILE, 'utf8')
+    const raw = fs.readFileSync(queuePersistenceFile, 'utf8')
     parsed = JSON.parse(raw)
   } catch {
     return
@@ -506,7 +554,7 @@ function loadQueuePersistence() {
 
 function saveQueuePersistence() {
   try {
-    fs.mkdirSync(path.dirname(QUEUE_PERSISTENCE_FILE), { recursive: true })
+    fs.mkdirSync(path.dirname(queuePersistenceFile), { recursive: true })
   } catch {
     // Ignore directory creation issues and attempt file write anyway.
   }
@@ -540,7 +588,7 @@ function saveQueuePersistence() {
     }
   }
 
-  fs.writeFileSync(QUEUE_PERSISTENCE_FILE, JSON.stringify({ version: 2, queues }, null, 2) + '\n', 'utf8')
+  fs.writeFileSync(queuePersistenceFile, JSON.stringify({ version: 2, queues }, null, 2) + '\n', 'utf8')
 }
 
 function ensureTargetQueue(target) {
@@ -744,9 +792,13 @@ function broadcastState(force = false) {
   io.emit('state', state)
 }
 
-setInterval(() => {
+const broadcastInterval = setInterval(() => {
   broadcastState()
 }, 1000)
+
+if (typeof broadcastInterval.unref === 'function') {
+  broadcastInterval.unref()
+}
 
 function stopViewer() {
   if (!viewerAttachedBotId) return false
@@ -3385,6 +3437,15 @@ function startWebServer() {
     }
   })
 
+  app.get('/api/queue/saved/slots', (req, res) => {
+    try {
+      const target = String(req.query?.target || STARTER_BOT_ID)
+      return res.json({ ok: true, slots: serializeSavedQueueSlots(target) })
+    } catch (error) {
+      return res.status(400).json({ ok: false, error: error.message })
+    }
+  })
+
   app.post('/api/queue/saved', (req, res) => {
     try {
       const target = String(req.body?.target || STARTER_BOT_ID)
@@ -3416,6 +3477,107 @@ function startWebServer() {
       saveQueuePersistence()
       emitSavedQueues(target)
       return res.json({ ok: true, queues: serializeSavedQueues(target) })
+    } catch (error) {
+      return res.status(400).json({ ok: false, error: error.message })
+    }
+  })
+
+  app.post('/api/queue/saved/slots/:slot/save', (req, res) => {
+    try {
+      const target = String(req.body?.target || STARTER_BOT_ID)
+      const slot = normalizeSavedQueueSlot(req.params.slot)
+      const queue = ensureTargetQueue(target)
+      if (queue.running) throw new Error('Cannot save queue while running')
+      if (!queue.steps.length) throw new Error('Cannot save an empty queue')
+
+      const name = makeSavedQueueSlotName(slot)
+      const now = new Date().toISOString()
+      const targetSaved = ensureTargetSavedQueues(target)
+      const previous = targetSaved.get(name)
+
+      targetSaved.set(name, {
+        name,
+        createdAt: previous?.createdAt || now,
+        updatedAt: now,
+        settings: normalizeQueueSettings(queue.settings),
+        steps: cloneQueueSteps(queue.steps)
+      })
+
+      saveQueuePersistence()
+      emitSavedQueues(target)
+      return res.json({ ok: true, slots: serializeSavedQueueSlots(target) })
+    } catch (error) {
+      return res.status(400).json({ ok: false, error: error.message })
+    }
+  })
+
+  app.post('/api/queue/saved/slots/:slot/load', (req, res) => {
+    try {
+      const target = String(req.body?.target || STARTER_BOT_ID)
+      const slot = normalizeSavedQueueSlot(req.params.slot)
+      const queue = ensureTargetQueue(target)
+      if (queue.running) throw new Error('Cannot load queue while running')
+
+      const name = makeSavedQueueSlotName(slot)
+      const saved = ensureTargetSavedQueues(target).get(name)
+      if (!saved) throw new Error(`Saved queue slot ${slot} is empty`)
+
+      queue.steps = cloneQueueSteps(saved.steps)
+      queue.settings = normalizeQueueSettings(saved.settings)
+      queue.lastError = null
+      queue.currentStepIndex = -1
+      queue.perBot = {}
+
+      saveQueuePersistence()
+      emitQueueState(target)
+      return res.json({ ok: true, queue: serializeTargetQueue(queue), slots: serializeSavedQueueSlots(target) })
+    } catch (error) {
+      return res.status(400).json({ ok: false, error: error.message })
+    }
+  })
+
+  app.post('/api/queue/saved/slots/:slot/run', async (req, res) => {
+    try {
+      const target = String(req.body?.target || STARTER_BOT_ID)
+      const slot = normalizeSavedQueueSlot(req.params.slot)
+      const username = String(req.body?.username || 'WebUI')
+      const queue = ensureTargetQueue(target)
+      if (queue.running) throw new Error('Queue is already running for this target')
+
+      const name = makeSavedQueueSlotName(slot)
+      const saved = ensureTargetSavedQueues(target).get(name)
+      if (!saved) throw new Error(`Saved queue slot ${slot} is empty`)
+
+      queue.steps = cloneQueueSteps(saved.steps)
+      queue.settings = normalizeQueueSettings(saved.settings)
+      queue.lastError = null
+      queue.currentStepIndex = -1
+      queue.perBot = {}
+
+      saveQueuePersistence()
+      emitQueueState(target)
+
+      const result = await startTargetQueue({ target, username })
+      return res.json({ ok: true, ...result, queue: serializeTargetQueue(queue), slots: serializeSavedQueueSlots(target) })
+    } catch (error) {
+      return res.status(400).json({ ok: false, error: error.message })
+    }
+  })
+
+  app.delete('/api/queue/saved/slots/:slot', (req, res) => {
+    try {
+      const target = String(req.query?.target || STARTER_BOT_ID)
+      const slot = normalizeSavedQueueSlot(req.params.slot)
+      const targetSaved = ensureTargetSavedQueues(target)
+      const name = makeSavedQueueSlotName(slot)
+      if (!targetSaved.has(name)) {
+        return res.status(404).json({ ok: false, error: `Saved queue slot ${slot} is already empty` })
+      }
+
+      targetSaved.delete(name)
+      saveQueuePersistence()
+      emitSavedQueues(target)
+      return res.json({ ok: true, slots: serializeSavedQueueSlots(target) })
     } catch (error) {
       return res.status(400).json({ ok: false, error: error.message })
     }
@@ -3672,7 +3834,49 @@ async function main() {
   startViewerFor(botSettings.viewerTargetBotId)
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+function __resetQueueStateForTests() {
+  queueByTarget.clear()
+  savedQueuesByTarget.clear()
+}
+
+function __setQueuePersistenceFileForTests(filePath) {
+  queuePersistenceFile = String(filePath)
+}
+
+function __getQueuePersistenceFileForTests() {
+  return queuePersistenceFile
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error)
+    process.exit(1)
+  })
+}
+
+module.exports = {
+  DEFAULT_COMMAND_SETTINGS,
+  DEFAULT_QUEUE_SETTINGS,
+  STARTER_BOT_ID,
+  QUEUE_SAVE_SLOT_COUNT,
+  normalizeNumber,
+  normalizeAuth,
+  normalizeCommandSettings,
+  normalizeQueueSettings,
+  normalizeCommand,
+  isWaitableQueueCommand,
+  normalizeQueueStep,
+  normalizeSavedQueueName,
+  normalizeSavedQueueSlot,
+  makeSavedQueueSlotName,
+  parseSavedQueueSlotName,
+  ensureTargetQueue,
+  ensureTargetSavedQueues,
+  serializeSavedQueues,
+  serializeSavedQueueSlots,
+  saveQueuePersistence,
+  loadQueuePersistence,
+  __resetQueueStateForTests,
+  __setQueuePersistenceFileForTests,
+  __getQueuePersistenceFileForTests
+}

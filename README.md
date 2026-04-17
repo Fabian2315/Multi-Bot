@@ -32,6 +32,7 @@ The app starts one starter bot and hosts a local dashboard. From the dashboard y
   - All bots
   - Group
 - Staged command execution
+- Multiple queue save slots (quick save/load/run)
 - Group management (create, edit, delete)
 - Bot automation capabilities:
   - Movement and following

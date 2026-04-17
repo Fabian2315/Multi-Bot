@@ -54,6 +54,8 @@ const queueClearBtn = document.getElementById('queueClearBtn')
 const savedQueueForm = document.getElementById('savedQueueForm')
 const savedQueueNameInput = document.getElementById('savedQueueNameInput')
 const savedQueueSaveBtn = document.getElementById('savedQueueSaveBtn')
+const queueSlotNotice = document.getElementById('queueSlotNotice')
+const queueSlotActions = document.getElementById('queueSlotActions')
 const savedQueuesList = document.getElementById('savedQueuesList')
 
 const openAddBotBtn = document.getElementById('openAddBotBtn')
@@ -103,6 +105,7 @@ let selectedQueue = {
   lastError: null
 }
 let selectedSavedQueues = []
+let selectedQueueSlots = []
 let autocompleteCommands = []
 let autocompleteItems = []
 let activeAutocompleteOptions = []
@@ -548,6 +551,7 @@ function renderAll() {
   renderStatusAndViewer()
   renderQueueControls()
   renderQueue()
+  renderQueueSlots()
   renderSavedQueues()
 }
 
@@ -779,6 +783,99 @@ function renderSavedQueues() {
   })
 }
 
+function renderQueueSlots() {
+  if (!queueSlotActions) return
+
+  queueSlotActions.innerHTML = ''
+  const slots = Array.isArray(selectedQueueSlots) && selectedQueueSlots.length
+    ? selectedQueueSlots
+    : [{ slot: 1, hasQueue: false }, { slot: 2, hasQueue: false }, { slot: 3, hasQueue: false }]
+
+  slots
+    .filter((entry) => Number(entry.slot) <= 3)
+    .forEach((entry) => {
+      const row = document.createElement('div')
+      row.className = 'list-row saved-queue-row'
+
+      const info = document.createElement('div')
+      info.className = 'saved-queue-info'
+      const timestamp = entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : ''
+      info.innerHTML = `<strong>Slot ${entry.slot}</strong><span>${entry.hasQueue ? `${entry.stepCount || 0} steps${timestamp ? ` • updated ${timestamp}` : ''}` : 'empty'}</span>`
+
+      const actions = document.createElement('div')
+      actions.className = 'inline-actions queue-inline-actions'
+
+      const saveBtn = document.createElement('button')
+      saveBtn.className = 'mini-btn'
+      saveBtn.textContent = 'Save'
+      saveBtn.disabled = selectedQueue.running || !selectedQueue.steps.length
+      saveBtn.addEventListener('click', async () => {
+        try {
+          await postJson(`/api/queue/saved/slots/${entry.slot}/save`, { target: selectedTarget })
+          await loadQueueSlots()
+        } catch (error) {
+          appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+        }
+      })
+
+      const loadBtn = document.createElement('button')
+      loadBtn.className = 'mini-btn'
+      loadBtn.textContent = 'Load'
+      loadBtn.disabled = selectedQueue.running || !entry.hasQueue
+      loadBtn.addEventListener('click', async () => {
+        try {
+          await postJson(`/api/queue/saved/slots/${entry.slot}/load`, { target: selectedTarget })
+          await loadSelectedQueue()
+        } catch (error) {
+          appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+        }
+      })
+
+      const runBtn = document.createElement('button')
+      runBtn.className = 'mini-btn action-btn-primary'
+      runBtn.textContent = 'Run'
+      runBtn.disabled = selectedQueue.running || !entry.hasQueue
+      runBtn.addEventListener('click', async () => {
+        try {
+          await postJson(`/api/queue/saved/slots/${entry.slot}/run`, {
+            target: selectedTarget,
+            username: 'WebUI'
+          })
+        } catch (error) {
+          appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+        }
+      })
+
+      const clearBtn = document.createElement('button')
+      clearBtn.className = 'mini-btn danger'
+      clearBtn.textContent = 'Clear'
+      clearBtn.disabled = selectedQueue.running || !entry.hasQueue
+      clearBtn.addEventListener('click', async () => {
+        try {
+          await deleteJson(`/api/queue/saved/slots/${entry.slot}?target=${encodeURIComponent(selectedTarget)}`)
+          await loadQueueSlots()
+        } catch (error) {
+          appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+        }
+      })
+
+      actions.appendChild(saveBtn)
+      actions.appendChild(loadBtn)
+      actions.appendChild(runBtn)
+      actions.appendChild(clearBtn)
+
+      row.appendChild(info)
+      row.appendChild(actions)
+      queueSlotActions.appendChild(row)
+    })
+
+  if (queueSlotNotice) {
+    queueSlotNotice.textContent = selectedQueue.running
+      ? 'Queue is running. Slot edits are temporarily locked.'
+      : 'Use slots 1-3 for fast save/load/run during gameplay.'
+  }
+}
+
 async function loadSelectedQueue() {
   try {
     const result = await getJson(`/api/queue?target=${encodeURIComponent(selectedTarget)}`)
@@ -799,6 +896,16 @@ async function loadSavedQueues() {
     const result = await getJson(`/api/queue/saved?target=${encodeURIComponent(selectedTarget)}`)
     selectedSavedQueues = Array.isArray(result?.queues) ? result.queues : []
     renderSavedQueues()
+  } catch (error) {
+    appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
+  }
+}
+
+async function loadQueueSlots() {
+  try {
+    const result = await getJson(`/api/queue/saved/slots?target=${encodeURIComponent(selectedTarget)}`)
+    selectedQueueSlots = Array.isArray(result?.slots) ? result.slots : []
+    renderQueueSlots()
   } catch (error) {
     appendLog({ ts: new Date().toISOString(), type: 'error', message: error.message })
   }
@@ -883,6 +990,7 @@ commandTarget.addEventListener('change', () => {
   renderGroups()
   loadSelectedQueue()
   loadSavedQueues()
+  loadQueueSlots()
 })
 
 queueStepType.addEventListener('change', () => {
@@ -1167,6 +1275,7 @@ socket.on('bootstrap', ({ state, settings, logs }) => {
   renderQueueControls()
   loadSelectedQueue()
   loadSavedQueues()
+  loadQueueSlots()
   loadAutocompleteData()
 })
 
@@ -1187,6 +1296,7 @@ socket.on('state', (state) => {
   if (selectedTarget !== previousTarget) {
     loadSelectedQueue()
     loadSavedQueues()
+    loadQueueSlots()
   }
 })
 
@@ -1198,12 +1308,14 @@ socket.on('queue_state', ({ target, queue }) => {
   queueTimeoutSecInput.value = selectedQueue.settings?.completionTimeoutSec ?? 60
   renderQueue()
   renderSavedQueues()
+  renderQueueSlots()
 })
 
 socket.on('saved_queues', ({ target, queues }) => {
   if (String(target) !== String(selectedTarget)) return
   selectedSavedQueues = Array.isArray(queues) ? queues : []
   renderSavedQueues()
+  loadQueueSlots()
 })
 
 socket.on('log', (log) => {
